@@ -19,6 +19,9 @@ node packages/cli/src/bin.ts session append "note from the other side"
 # minions (sub-agent sessions with tool loop, memory-aware):
 node packages/cli/src/bin.ts minions spawn "count the .ts files in the repo"
 node packages/cli/src/bin.ts minions list
+node packages/cli/src/bin.ts minions spawn "write the deploy report" --depends-on <minionId>   # waits until that minion finishes
+> Minions persist across restarts (~/.o-harness/minions/minions.json): running ones are marked interrupted, pending chains resume, dependsOn orders pipelines.
+
 # memory (temporal, ADD-only, queryable at any past instant):
 node packages/cli/src/bin.ts memory search "user prefers"
 node packages/cli/src/bin.ts memory add "user prefers dark GUI themes" --subject user
