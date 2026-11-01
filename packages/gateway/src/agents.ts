@@ -48,6 +48,9 @@ export interface AgentsOptions {
   sessions: SessionsStore;
   memory: MemoryStore;
   callDevice: (deviceId: string, method: string, params?: unknown) => Promise<unknown>;
+  /** Offered device tools (e.g. phone calendar). Map deviceId -> tools. May require per-call approval. */
+  listDeviceTools?: () => Record<string, { name: string; description?: string; parameters?: Record<string, unknown> }[]>;
+  callTool?: (deviceId: string, tool: string, args: unknown, requester: string) => Promise<unknown>;
   onChange: (m: Minion) => void;
   concurrency?: number;
 }
@@ -168,6 +171,16 @@ export class AgentRuntime {
       const model = m.model ?? resolved.model.id;
       const effort = m.effort ?? resolved.effort;
       const toolDefs = BASE_TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
+      // Externally offered device tools (mobile calendar etc.) as "<deviceId>:<tool>".
+      const deviceToolNames = new Map<string, { deviceId: string; tool: string }>();
+      const offered = this.#opts.listDeviceTools?.() ?? {};
+      for (const [deviceId, tools] of Object.entries(offered)) {
+        for (const t of tools) {
+          const full = deviceId + ":" + t.name;
+          deviceToolNames.set(full, { deviceId, tool: t.name });
+          toolDefs.push({ type: "function", function: { name: full, description: "Device-offered tool (may prompt the device owner for approval): " + (t.description ?? t.name), parameters: t.parameters ?? { type: "object", properties: {} } } });
+        }
+      }
       while (m.turnsUsed < m.maxTurns && ac.signal.aborted !== true) {
         if (ac.signal.aborted) break;
         const out = await chatOnce({
@@ -183,10 +196,16 @@ export class AgentRuntime {
             const name = tc.function?.name;
             let args: any = {};
             try { args = JSON.parse(tc.function?.arguments ?? "{}"); } catch { /* bad args -> {} */ }
-            const tool = BASE_TOOLS.find((t) => t.name === name);
+            const deviceRef = deviceToolNames.get(String(name));
             let content: unknown;
-            if (!tool) content = "unknown tool: " + String(name);
-            else {
+            if (deviceRef) {
+              try {
+                content = await this.#opts.callTool!(deviceRef.deviceId, deviceRef.tool, args, "minion:" + m.id);
+              } catch (err) { content = "tool error: " + String(err); }
+            }
+            const tool = deviceRef ? undefined : BASE_TOOLS.find((t) => t.name === name);
+            if (!tool && !deviceRef) content = "unknown tool: " + String(name);
+            else if (tool) {
               try {
                 content = await tool.run(args, {
                   minion: m,

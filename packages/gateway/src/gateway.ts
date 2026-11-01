@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
@@ -80,10 +81,13 @@ export class Gateway {
   agents: AgentRuntime;
   pairing: PairingStore;
   consolidator: MemoryConsolidator;
+  grants: GrantsStore;
+  tools: ToolBroker;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
   #wsCtx = new Map<WebSocket, AuthCtx>();
+  #deviceConns = new Map<string, WebSocket>();
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true });
   #wssClient = new WebSocketServer({ noServer: true });
@@ -95,11 +99,19 @@ export class Gateway {
     this.pairing = new PairingStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.consolidator = new MemoryConsolidator(this.memory, this.settings);
+    this.grants = new GrantsStore(dataDirOf(dataDir));
+    this.tools = new ToolBroker(
+      this.grants,
+      (deviceId, tool, args) => this.#callDevice(deviceId, "tool.invoke", { tool, args }, 60_000),
+      (topic, data) => this.#broadcastEvent(topic, data),
+    );
     this.agents = new AgentRuntime({
       settings: this.settings,
       sessions: this.sessions,
       memory: this.memory,
       callDevice: (deviceId, method, params) => this.#callDevice(deviceId, method, params ?? {}),
+      listDeviceTools: () => this.tools.list(),
+      callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester ?? "minion"),
       onChange: (m) => this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error }),
     });
     this.config = {
@@ -246,6 +258,21 @@ export class Gateway {
     });
     this.rpc.set(Methods.PairingList, () => this.pairing.list().map((d) => ({ ...d, secret: undefined })));
     this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); return { ok: true }; });
+    // --- device-offered tools + authorization grants ---
+    this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {
+      const deviceId = ctx.deviceId ?? "local"; // registered device socket; admin callers pass deviceId param
+      const offered = (Array.isArray(p?.tools) ? p.tools : []) as OfferedTool[];
+      const dev = String(p?.deviceId ?? deviceId);
+      this.tools.offer(dev, offered);
+      return { ok: true, deviceId: dev, count: offered.length };
+    });
+    this.rpc.set(Methods.DeviceToolsList, () => this.tools.list());
+    this.rpc.set(Methods.DeviceToolsCall, (p) => this.tools.call(String(p?.deviceId ?? ""), String(p?.tool ?? ""), p?.args, "client"));
+    this.rpc.set(Methods.ToolsPending, () => this.tools.pending());
+    this.rpc.set(Methods.ToolsRespond, (p, ctx) =>
+      ({ ok: this.tools.respond(String(p?.id ?? ""), Boolean(p?.approved), Boolean(p?.remember), { admin: ctx.admin, deviceId: ctx.deviceId }) }));
+    this.rpc.set(Methods.GrantsList, (p) => this.tools.grantsFor(p?.deviceId ? String(p.deviceId) : undefined));
+    this.rpc.set(Methods.GrantsRevoke, (p) => ({ ok: this.tools.revoke(String(p?.deviceId ?? ""), String(p?.tool ?? "")) }));
     this.rpc.set(Methods.ModelsFetch, (p) => fetchProviderModels(String(p?.baseUrl ?? ""), typeof p?.apiKey === "string" && p.apiKey !== "***set***" ? p.apiKey : undefined));
     this.rpc.set(Methods.ModelsTest, async (p) => {
       const ref = this.settings.resolveRef(String(p?.providerId ?? ""), String(p?.modelId ?? ""));
@@ -444,23 +471,64 @@ export class Gateway {
 
   #callScoped(method: string, params: unknown, ctx: AuthCtx): Promise<unknown> {
     try { this.#checkScope(ctx, method); } catch (e) { return Promise.reject(e); }
-    return this.rpc.call(method, params, { deviceId: ctx.admin ? undefined : ctx.deviceId });
+    return this.rpc.call(method, params, { deviceId: ctx.admin ? undefined : ctx.deviceId, admin: ctx.admin });
   }
 
   #onClientSocket(ws: WebSocket) {
     this.#clientSockets.add(ws);
+    const ctx = this.#wsCtx.get(ws) ?? {};
+    // Paired clients (e.g. phones) register as devices so tools/devices can reach them.
+    if (!ctx.admin && ctx.deviceId) {
+      this.#deviceConns.set(ctx.deviceId, ws);
+      const existing = this.registry.get(ctx.deviceId);
+      if (!existing) {
+        this.registry.register({ id: ctx.deviceId, name: "mobile", kind: "mobile", status: "connected", capabilities: ["tools"], conn: ws, meta: { paired: true }, connectedAt: Date.now(), lastSeen: Date.now() });
+        const reg = this.registry.get(ctx.deviceId);
+        if (reg) this.#broadcastEvent("device.up", { deviceId: reg.id, device: publicDevice(reg) });
+      } else {
+        // Reconnect: the old conn is stale — rebind it or calls would hit the dead socket.
+        existing.conn = ws;
+        this.#markOnline(ctx.deviceId);
+      }
+    }
     ws.on("message", (raw: Buffer | string) => {
       const msg = decode(String(raw));
-      if (!msg || msg.type !== Msg.RpcReq || typeof msg.id !== "string") return;
-      const ctx = this.#wsCtx.get(ws) ?? {};
-      this.#callScoped(String(msg.method), msg.params, ctx).then((result) => {
+      if (!msg || typeof msg.id !== "string") return;
+      if (msg.type === Msg.RpcRes) {
+        const p = this.#pending.get(String(msg.id));
+        if (p) {
+          this.#pending.delete(String(msg.id));
+          clearTimeout(p.timer);
+          if (msg.error !== undefined) p.reject(new Error(String(msg.error)));
+          else p.resolve(msg.result);
+        }
+        return;
+      }
+      if (msg.type !== Msg.RpcReq) return;
+      const c = this.#wsCtx.get(ws) ?? {};
+      this.#callScoped(String(msg.method), msg.params, c).then((result) => {
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, result }));
       }).catch((err) => {
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) }));
       });
     });
-    ws.on("close", () => { this.#clientSockets.delete(ws); this.#wsCtx.delete(ws); });
+    ws.on("close", () => {
+      this.#clientSockets.delete(ws); this.#wsCtx.delete(ws);
+      const d = this.#wsCtx.get(ws);
+      const id = (ctx.deviceId && this.#deviceConns.get(ctx.deviceId) === ws) ? ctx.deviceId : undefined;
+      if (id) { this.#deviceConns.delete(id); this.tools.forget(id); this.#markOffline(id); }
+      if (d) void d;
+    });
     ws.on("error", () => { /* noop */ });
+  }
+
+  #markOnline(id: string) {
+    const d = this.registry.get(id);
+    if (d && d.status !== "connected") {
+      d.status = "connected";
+      d.lastSeen = Date.now();
+      this.#broadcastEvent("device.up", { deviceId: id, device: publicDevice(d) });
+    }
   }
 
   async #callDevice(deviceId: string, method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {

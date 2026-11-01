@@ -233,6 +233,52 @@ export async function main(args: string[]): Promise<void> {
     }
     throw new Error("usage: o-h pair create [--kind mobile|remote] [--scopes read,write,admin] [--ttl minutes] | list | revoke <id> | redeem <code> [--name n] [--url http://host:port]");
   }
+  if (cmd === "tools") {
+    const sub = rest[0] ?? "list";
+    if (sub === "list") {
+      const list = await callOnce<any[]>("device.tools.list", undefined, port);
+      console.log(JSON.stringify(list, null, 2));
+      return;
+    }
+    if (sub === "call") {
+      const dev = flag(args, "device");
+      const tool = flag(args, "tool");
+      const argsStr = flag(args, "args");
+      if (!dev || !tool) throw new Error("usage: o-h tools call --device <id> --tool <name> [--args json]");
+      const res = await callOnce<any>("device.tools.call", { deviceId: dev, tool, args: argsStr ? JSON.parse(argsStr) : {} }, port);
+      console.log(JSON.stringify(res, null, 2));
+      return;
+    }
+    if (sub === "pending") {
+      const list = await callOnce<any[]>("tools.pending", undefined, port);
+      if (!list.length) { console.log("no pending tool approvals"); return; }
+      console.log(list.map(a => a.id + " " + a.deviceId + " " + a.tool + " args=" + JSON.stringify(a.args) + " from " + a.requester + " " + new Date(a.createdAt).toLocaleString()).join("\n"));
+      return;
+    }
+    if (sub === "respond") {
+      const id = rest[1];
+      const approve = flag(args, "approve");
+      if (!id) throw new Error("usage: o-h tools respond <ask-id> [--approve [--remember]]");
+      await callOnce("tools.respond", { id, approved: approve === undefined || approve !== "no", remember: flag(args, "remember") !== undefined }, port);
+      console.log("answered " + id);
+      return;
+    }
+    if (sub === "grants") {
+      const dev = flag(args, "device");
+      const list = await callOnce<any[]>("grants.list", dev ? { deviceId: dev } : undefined, port);
+      console.log(list.length ? list.map(g => g.deviceId + " " + g.tool + (g.lastUsedAt ? " last " + new Date(g.lastUsedAt).toLocaleString() : "")).join("\n") : "no standing grants");
+      return;
+    }
+    if (sub === "revoke") {
+      const dev = rest[1], tool = rest[2];
+      if (!dev || !tool) throw new Error("usage: o-h tools revoke <deviceId> <tool>");
+      await callOnce("grants.revoke", { deviceId: dev, tool }, port);
+      console.log("revoked grant " + dev + " " + tool);
+      return;
+    }
+    throw new Error("usage: o-h tools list | call --device <id> --tool <name> [--args json] | pending | respond <ask-id> [--approve [--remember]] | grants [--device <id>] | revoke <deviceId> <tool>");
+  }
+
 
   if (cmd === "sessions") {
     const list = await callOnce("sessions.list", undefined, port);

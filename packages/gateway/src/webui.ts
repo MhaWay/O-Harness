@@ -54,6 +54,7 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
     <button data-tab="sessions">Sessions</button>
     <button data-tab="minions">Minions</button>
     <button data-tab="devices">Devices</button>
+    <button data-tab="tools">Tools</button>
     <button data-tab="settings">Settings</button>
   </nav>
   <div>
@@ -75,6 +76,17 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <div id="pairOut" class="dim">no active code</div>
         <table style="margin-top:8px"><thead><tr><th>id</th><th>name</th><th>kind</th><th>scopes</th><th>last seen</th><th></th></tr></thead>
         <tbody id="pairRows"></tbody></table>
+      </div>
+    </section>
+    <section id="tab-tools">
+      <div class="card"><h2>Pending tool approvals</h2>
+        <div class="row"><button class="act" onclick="loadTools()">Refresh</button><span class="dim">auto-refresh while this tab is open</span></div>
+        <table style="margin-top:8px"><thead><tr><th>id</th><th>device</th><th>tool</th><th>args</th><th>requester</th><th></th></tr></thead>
+        <tbody id="askRows"></tbody></table>
+      </div>
+      <div class="card"><h2>Standing grants</h2>
+        <table style="margin-top:8px"><thead><tr><th>device</th><th>tool</th><th>last used</th><th></th></tr></thead>
+        <tbody id="grantRows"></tbody></table>
       </div>
     </section>
     <section id="tab-sessions">
@@ -184,6 +196,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   b.classList.add('on'); $('tab-'+b.dataset.tab).classList.add('on');
   if (b.dataset.tab==='settings') loadSettingsTab();
   if (b.dataset.tab==='devices') { loadDevices(); loadPairing(); }
+  if (b.dataset.tab==='tools') { loadTools(); if(!askTimer) askTimer=setInterval(loadTools,3000); } else if (askTimer){ clearInterval(askTimer); askTimer=null; }
   if (b.dataset.tab==='sessions') loadSessions();
   if (b.dataset.tab==='minions') { loadMinions(); if(!minTimer) minTimer=setInterval(loadMinions,3000); } else if (minTimer){ clearInterval(minTimer); minTimer=null; }
   if (b.dataset.tab==='overview') loadOverview();
@@ -315,6 +328,22 @@ async function showMinion(id){
 }
 async function killMinion(id){ try { await wsRpc('agents.kill',{id}); toast('killed '+id); loadMinions(); } catch(e){ toast(String(e),false); } }
 
+let askTimer = null;
+async function loadTools(){
+  try {
+    const [asks, grants] = await Promise.all([wsRpc('tools.pending'), wsRpc('grants.list')]);
+    $('askRows').innerHTML = (asks.length?asks.map(a=>
+      '<tr><td>'+esc(a.id)+'</td><td>'+esc(a.deviceId)+'</td><td>'+esc(a.tool)+'</td><td><code>'+esc(JSON.stringify(a.args||{}).slice(0,80))+'</code></td><td>'+esc(a.requester)+'</td><td>'+
+      '<button class="act" data-act="toolyes" data-id="'+esc(a.id)+'">approve</button> '+
+      '<button class="ghost" data-act="toolrem" data-id="'+esc(a.id)+'">approve & always</button> '+
+      '<button class="danger" data-act="toolno" data-id="'+esc(a.id)+'">deny</button></td></tr>').join(''):'<tr><td colspan="6" class="dim">none</td></tr>');
+    $('grantRows').innerHTML = (grants.length?grants.map(g=>
+      '<tr><td>'+esc(g.deviceId)+'</td><td>'+esc(g.tool)+'</td><td>'+esc(g.lastUsedAt?new Date(g.lastUsedAt).toLocaleString():'-')+'</td><td>'+
+      '<button class="danger" data-act="revgrant" data-id="'+esc(g.deviceId)+'" data-tool="'+esc(g.tool)+'">revoke</button></td></tr>').join(''):'<tr><td colspan="4" class="dim">none</td></tr>');
+  } catch(e){ $('askRows').innerHTML = '<tr><td colspan="6" class="bad">'+esc(String(e))+'</td></tr>'; }
+}
+async function toolRespond(id, approved, remember){ try { await wsRpc('tools.respond',{id,approved,remember}); toast(approved?'approved '+id:'denied '+id); loadTools(); } catch(e){ toast(String(e),false); } }
+
 document.addEventListener('click', (ev) => {
   const t = ev.target.closest && ev.target.closest('[data-act]');
   if (!t) return;
@@ -322,6 +351,10 @@ document.addEventListener('click', (ev) => {
   if (act === 'show') showMinion(id);
   else if (act === 'revpair') revokePair(id);
   else if (act === 'kill') killMinion(id);
+  else if (act === 'toolyes') toolRespond(id, true, false);
+  else if (act === 'toolrem') toolRespond(id, true, true);
+  else if (act === 'toolno') toolRespond(id, false, false);
+  else if (act === 'revgrant') { const dt = t.getAttribute('data-tool'); wsRpc('grants.revoke',{deviceId:id, tool:dt}).then(()=>{toast('grant revoked');loadTools();}).catch(e=>toast(String(e),false)); }
 });
 ping(); loadOverview(); setInterval(ping, 15000);
 </script>

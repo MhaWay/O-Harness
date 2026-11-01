@@ -97,6 +97,12 @@ export class PairingStore {
 export const SCOPE_FOR_METHOD: Record<string, string> = {
   "memory.add": "write",
   "memory.consolidate": "write",
+  "device.tools.offer": "write",
+  "device.tools.call": "write",
+  "tools.respond": "read",
+  "tools.pending": "read",
+  "grants.list": "read",
+  "grants.revoke": "admin",
   "sessions.append": "write",
   "agents.spawn": "write",
   "agents.kill": "admin",

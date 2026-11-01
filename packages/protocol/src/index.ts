@@ -34,6 +34,13 @@ export const Methods = {
   PairingRevoke: "pairing.revoke",
   MemorySearch: "memory.search",
   MemoryList: "memory.list",
+  DeviceToolsOffer: "device.tools.offer",
+  DeviceToolsList: "device.tools.list",
+  DeviceToolsCall: "device.tools.call",
+  ToolsPending: "tools.pending",
+  ToolsRespond: "tools.respond",
+  GrantsList: "grants.list",
+  GrantsRevoke: "grants.revoke",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };
