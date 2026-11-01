@@ -257,9 +257,12 @@ function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;
 async function loadChat(){
   try {
     const ss = await wsRpc('sessions.list', {});
+    let minionIds = new Set();
+    try { const ag = await wsRpc('agents.list', {}); (ag.minions || ag || []).forEach(function(m){ minionIds.add(m.id); if (m.sessionId) minionIds.add(m.sessionId); }); } catch(e){}
+    const shown = ss.filter(function(s){ if (minionIds.has(s.id)) return false; return s.id === 'main' || s.chat === true || s.chat === undefined; });
     const sel = $('chatSession');
     const cur = sel.value;
-    sel.innerHTML = ss.map(function(s){ return '<option value=' + esc(s.id) + '>' + esc(s.title) + '</option>'; }).join('');
+    sel.innerHTML = shown.map(function(s){ return '<option value=' + esc(s.id) + '>' + esc(s.title) + '</option>'; }).join('');
     if (cur && [...sel.options].some(function(o){ return o.value === cur; })) sel.value = cur;
     else if (!cur && [...sel.options].some(function(o){ return o.value === 'main'; })) sel.value = 'main';
     const h = await wsRpc('chat.history', { sessionId: (sel.value || 'main') });
