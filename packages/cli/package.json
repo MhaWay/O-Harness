@@ -1,0 +1,13 @@
+{
+  "name": "@o-harness/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/cli.ts",
+  "exports": { ".": "./src/cli.ts" },
+  "bin": { "o-h": "./src/bin.ts" },
+  "dependencies": {
+    "@o-harness/gateway": "workspace:*",
+    "@o-harness/protocol": "workspace:*",
+    "ws": "^8.18.0"
+  }
+}

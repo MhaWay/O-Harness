@@ -1,0 +1,64 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/cli:
+    dependencies:
+      '@o-harness/gateway':
+        specifier: workspace:*
+        version: link:../gateway
+      '@o-harness/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.1
+
+  packages/core: {}
+
+  packages/gateway:
+    dependencies:
+      '@o-harness/core':
+        specifier: workspace:*
+        version: link:../core
+      '@o-harness/plugin-local':
+        specifier: workspace:*
+        version: link:../../plugins/device-local
+      '@o-harness/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.1
+
+  packages/protocol: {}
+
+  plugins/device-local:
+    dependencies:
+      '@o-harness/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
+packages:
+
+  ws@8.22.1:
+    resolution: {integrity: sha512-oyL6OPYme/CmiFvNuGzeoxCJ4nOrZE2O1FwM9MWM1AsGri6nLXB2pg+lNA8aLeXMSav0J6eIVS1j6vUPzUtK9g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
+snapshots:
+
+  ws@8.22.1: {}
