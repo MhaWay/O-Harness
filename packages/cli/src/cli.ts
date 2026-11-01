@@ -213,7 +213,9 @@ export async function main(args: string[]): Promise<void> {
       const overlay = flag(args, "overlay") as OverlayKind | undefined; // off | tailscale | zerotier
       const overlayAuthKey = flag(args, "overlay-auth-key");
       const overlayNetId = flag(args, "overlay-net");
-      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, overlay, overlayAuthKey, overlayNetId, log: (m: string) => console.log(m) });
+      if (args.includes("--insecure")) process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      const url = flag(args, "url") ?? wsUrl(port, "/node", cfg.token);
+      await runNodeLoop({ url: url, token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, overlay, overlayAuthKey, overlayNetId, log: (m: string) => console.log(m) });
       return;
     }
     throw new Error("usage: o-h node connect [--name <name>] [--device-id id] [--direct-port n] [--no-direct] [--overlay off|tailscale|zerotier] [--overlay-auth-key k] [--overlay-net id]");

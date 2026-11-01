@@ -1,4 +1,5 @@
-import { createServer, type IncomingMessage, type Server } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { createServer as createSecureServer } from "node:https";
 import { WebSocketServer, WebSocket } from "ws";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -15,6 +16,7 @@ import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
+import { resolveTls } from "./tls.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileP = promisify(execFile);
@@ -29,6 +31,8 @@ export interface GatewayConfig {
   overlay?: "auto" | "off" | "tailscale" | "zerotier";
   overlayAuthKey?: string;
   overlayNetId?: string;
+  /** TLS: auto = self-signed generated on demand; off = plain HTTP. */
+  tls?: "auto" | "off";
 }
 
 export const DEFAULT_PORT = 8710;
@@ -48,7 +52,7 @@ export function loadConfig(dataDir?: string): { port: number; token: string; plu
   const file = configFilePath(dataDir);
   try {
     const j = JSON.parse(readFileSync(file, "utf-8"));
-    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}) };
+    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}), ...(j.tls ? { tls: String(j.tls) as "auto" | "off" } : {}) };
   } catch { /* first run */ }
   const cfg = { port: DEFAULT_PORT, token: randomBytes(16).toString("hex"), plugins: [] as string[] };
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
@@ -90,12 +94,15 @@ export class Gateway {
   #clientSockets = new Set<WebSocket>();
   #wsCtx = new Map<WebSocket, AuthCtx>();
   #deviceConns = new Map<string, WebSocket>();
+  #dataDir = dataDirOf();
+  #pairHits = new Map<string, { n: number; resetAt: number }>();
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true });
   #wssClient = new WebSocketServer({ noServer: true });
 
   constructor(config: Partial<GatewayConfig> = {}, dataDir?: string) {
     const base = loadConfig(dataDir);
+    this.#dataDir = dataDirOf(dataDir);
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
@@ -131,6 +138,7 @@ export class Gateway {
       ...(config.overlay ?? base.overlay ? { overlay: (config.overlay ?? base.overlay) as GatewayConfig["overlay"] } : {}),
       ...(config.overlayAuthKey ?? base.overlayAuthKey ? { overlayAuthKey: (config.overlayAuthKey ?? base.overlayAuthKey) as string } : {}),
       ...(config.overlayNetId ?? base.overlayNetId ? { overlayNetId: (config.overlayNetId ?? base.overlayNetId) as string } : {}),
+      ...(config.tls ?? base.tls ? { tls: (config.tls ?? base.tls) as "auto" | "off" } : {}),
     };
   }
 
@@ -329,7 +337,9 @@ export class Gateway {
     }
     await this.plugins.setupAll(this.#api());
 
-    const server = createServer((req, res) => {
+    const tlsMat = resolveTls(this.config.tls, this.#dataDir);
+    if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "local"));
       if (url.pathname === "/" || url.pathname === "/index.html") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -340,6 +350,12 @@ export class Gateway {
         let body = "";
         req.on("data", (c) => { body += String(c); if (body.length > 10_000) req.destroy(); });
         req.on("end", () => {
+          const ip = (req.socket.remoteAddress ?? "?unknown").replace(/^::ffff:/, "");
+          if (!this.#pairAllowed(ip)) {
+            res.writeHead(429, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "too many pairing attempts, try again later" }));
+            return;
+          }
           try {
             const { code, name } = JSON.parse(body || "{}") as { code?: string; name?: string };
             const { device, secret } = this.pairing.redeem(String(code ?? ""), String(name ?? "device"));
@@ -348,6 +364,7 @@ export class Gateway {
           } catch (err) {
             res.writeHead(400, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+            try { this.pairing.noteBadCode(String(JSON.parse(body || "{}").code ?? "")); } catch { /* noop */ }
           }
         });
         return;
@@ -364,7 +381,8 @@ export class Gateway {
       }
       res.writeHead(404);
       res.end("not found");
-    });
+    };
+    const server = (tlsMat && tlsMat.key) ? createSecureServer({ key: tlsMat.key, cert: tlsMat.cert }, handler) : createServer(handler);
     server.on("upgrade", (req, socket, head) => this.#onUpgrade(req, socket, head));
     // overlay bootstrap: "auto" (default) enables tailscale on non-loopback binds (headless/remote servers)
     const wantOv = this.config.overlay ?? "auto";
@@ -398,6 +416,14 @@ export class Gateway {
     const paired = this.pairing.auth(secret);
     if (paired) return { deviceId: paired.id };
     return null;
+  }
+
+  #pairAllowed(ip: string): boolean {
+    const now = Date.now();
+    const rec = this.#pairHits.get(ip);
+    if (!rec || now > rec.resetAt) { this.#pairHits.set(ip, { n: 1, resetAt: now + 300_000 }); return true; }
+    rec.n++;
+    return rec.n <= 20;
   }
 
   #checkScope(ctx: AuthCtx | undefined, method: string) {

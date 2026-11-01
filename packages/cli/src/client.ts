@@ -3,14 +3,20 @@ import { decode, encode, Msg } from "@o-harness/protocol";
 
 let counter = 0;
 
-export function wsUrl(port: number, path: string, token: string): string {
-  return `ws://127.0.0.1:${port}${path}?token=${encodeURIComponent(token)}`;
+export function wsUrl(port: number, path: string, token: string, secure = false): string {
+  return (secure ? "wss" : "ws") + "://127.0.0.1:" + port + path + "?token=" + encodeURIComponent(token);
+}
+
+/** Build endpoint url from config; tls "auto" implies self-signed => relax cert checks client-side. */
+export function urlFor(cfg: { port: number; token: string; tls?: string }, path: string): string {
+  if (cfg.tls === "auto") process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+  return wsUrl(cfg.port, path, cfg.token, cfg.tls === "auto");
 }
 
 export async function callOnce<T = unknown>(method: string, params?: unknown, port?: number): Promise<T> {
   const { loadConfig } = await import("@o-harness/gateway");
   const cfg = loadConfig();
-  const url = wsUrl(port ?? cfg.port, "/api", cfg.token);
+  const url = urlFor({ port: port ?? cfg.port, token: cfg.token, tls: (cfg as { tls?: string }).tls }, "/api");
   return await new Promise<T>((resolvePromise, rejectPromise) => {
     const ws = new WebSocket(url);
     const id = "cli-" + Date.now().toString(36) + "-" + counter++;
