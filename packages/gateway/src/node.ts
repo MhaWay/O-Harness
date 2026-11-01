@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer } from "ws";
 import { decode, encode, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
+import { ensureOverlay, type OverlayKind } from "./overlay.ts";
 
 export interface NodeOpts {
   url: string;
@@ -13,6 +14,10 @@ export interface NodeOpts {
   deviceId?: string;
   directPort?: number; // 0 = ephemeral; false disables via noDirect
   noDirect?: boolean;
+  /** Opt-in overlay network: bootstrap+join tailscale or zerotier (install on demand). Default off. */
+  overlay?: OverlayKind;
+  overlayAuthKey?: string;
+  overlayNetId?: string;
   log?: (m: string) => void;
   onConnected?: (nodeId: string) => void;
 }
@@ -72,13 +77,14 @@ export function tailscaleAddress(): string | undefined {
   }
 }
 
-export function buildCandidates(directPort: number): string[] {
+export function buildCandidates(directPort: number, overlayAddresses: string[] = []): string[] {
   const extra = (process.env.OH_ADDR_EXTRA ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (!Number.isFinite(directPort)) return [...new Set(extra)]; // no direct server: only explicit candidates
   const out: string[] = [];
   for (const ip of lanAddresses()) out.push(`ws://${ip}:${directPort}`);
-  const ts = tailscaleAddress();
-  if (ts) out.push(`ws://${ts}:${directPort}`);
+  for (const ip of overlayAddresses) out.push(`ws://${ip}:${directPort}`);
+  const ts = tailscaleAddress(); // passive: if tailscale happens to be running, also advertise it
+  if (ts && !overlayAddresses.includes(ts)) out.push(`ws://${ts}:${directPort}`);
   out.push(...extra);
   return [...new Set(out)];
 }
@@ -155,7 +161,14 @@ export async function runNodeLoop(opts: NodeOpts): Promise<void> {
     direct = await startDirectServer(opts.directPort ?? 0, opts.token);
     opts.log?.("direct server on port " + direct.port);
   }
-  const addresses = direct ? buildCandidates(direct.port) : buildCandidates(Infinity);
+  let overlayAddresses: string[] = [];
+  if (opts.overlay && opts.overlay !== "off") {
+    const ov = await ensureOverlay(opts.overlay, { log: opts.log, authKey: opts.overlayAuthKey, netId: opts.overlayNetId });
+    overlayAddresses = ov.addresses;
+    if (ov.notes.length) opts.log?.(ov.notes.join("; "));
+    if (!ov.started) opts.log?.("overlay enabled but not active — direct candidates without overlay");
+  }
+  const addresses = direct ? buildCandidates(direct.port, overlayAddresses) : buildCandidates(Infinity, overlayAddresses);
   for (;;) {
     try {
       const { ws, nodeId } = await connectNode({ ...opts, deviceId, addresses });

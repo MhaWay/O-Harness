@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { loadConfig } from "@o-harness/gateway";
 import { createDefaultGateway } from "@o-harness/gateway";
 import { runNodeLoop } from "@o-harness/gateway";
+import type { OverlayKind } from "@o-harness/gateway";
 import { callOnce, wsUrl } from "./client.ts";
 import { hostname } from "node:os";
 
@@ -103,10 +104,13 @@ export async function main(args: string[]): Promise<void> {
       const deviceId = flag(args, "device-id");
       const directPort = flag(args, "direct-port");
       const noDirect = args.includes("--no-direct");
-      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, log: (m: string) => console.log(m) });
+      const overlay = flag(args, "overlay") as OverlayKind | undefined; // off | tailscale | zerotier
+      const overlayAuthKey = flag(args, "overlay-auth-key");
+      const overlayNetId = flag(args, "overlay-net");
+      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, overlay, overlayAuthKey, overlayNetId, log: (m: string) => console.log(m) });
       return;
     }
-    throw new Error("usage: o-h node connect [--name <name>]");
+    throw new Error("usage: o-h node connect [--name <name>] [--device-id id] [--direct-port n] [--no-direct] [--overlay off|tailscale|zerotier] [--overlay-auth-key k] [--overlay-net id]");
   }
 
   if (cmd === "sessions") {
