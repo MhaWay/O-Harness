@@ -57,6 +57,7 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
     <button data-tab="tools">Tools</button>
     <button data-tab="chat">Chat</button>
     <button data-tab="sched">Scheduler</button>
+<button data-tab="memory">Memory</button>
 <button data-tab="settings">Settings</button>
   </nav>
   <div>
@@ -134,6 +135,19 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <input id="sEvery" type="number" value="60" style="width:90px"><input id="sDaily" placeholder="09:00" class="hidden"><input id="sOnce" placeholder="2026-12-01T08:00" class="hidden" style="flex:1"></div>
         <div class="row"><button class="act" onclick="addSched()">+ Schedule job</button><button class="ghost" onclick="loadSched()">Reload</button><span class="dim" id="schedStatus"></span></div>
         <table class="t"><thead><tr><th>id</th><th>next</th><th>kind</th><th>label</th><th>last</th><th></th></tr></thead><tbody id="schedRows"><tr><td colspan="6" class="dim">loading…</td></tr></tbody></table>
+      </div>
+    </section>
+    <section id="tab-memory">
+      <div class="card"><h2>Memory</h2>
+        <div class="row"><input id="mQuery" placeholder="search memory…" style="flex:1;min-width:220px">
+        <input id="mSubject" placeholder="subject (optional)" style="width:180px">
+        <button class="act" onclick="searchMemory()">Search</button>
+        <button class="ghost" onclick="searchMemory('')">All</button></div>
+        <div class="row"><input id="mAdd" placeholder="remember a fact…" style="flex:1;min-width:280px">
+        <button class="act" onclick="addMemory()">+ Remember</button>
+        <button class="ghost" onclick="consMemory()">Consolidate</button>
+        <span class="dim" id="memStatus"></span></div>
+        <table class="t"><thead><tr><th>score</th><th>subject</th><th>layer</th><th>text</th><th>valid</th><th>age</th></tr></thead><tbody id="memRows"><tr><td colspan="6" class="dim">type something and Search, or All</td></tr></tbody></table>
       </div>
     </section>
     <section id="tab-settings">
@@ -215,6 +229,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); $('tab-'+b.dataset.tab).classList.add('on');
   if (b.dataset.tab==='settings') loadSettingsTab();
+  if (b.dataset.tab==='memory') searchMemory('');
   if (b.dataset.tab==='devices') { loadDevices(); loadPairing(); }
   if (b.dataset.tab==='tools') { loadTools(); if(!askTimer) askTimer=setInterval(loadTools,3000); } else if (askTimer){ clearInterval(askTimer); askTimer=null; }
   if (b.dataset.tab==='sessions') loadSessions();
@@ -410,6 +425,40 @@ async function addSched(){ const label=$('sLabel').value.trim(); const message=$
   if(cad==='every') cadence={type:'every',minutes:Number($('sEvery').value)}; else if(cad==='daily') cadence={type:'daily',time:$('sDaily').value.trim()||'09:00'}; else { const t=Date.parse($('sOnce').value); if(!t){ $('schedStatus').textContent='bad date'; return; } cadence={type:'once',at:new Date(t).toISOString()}; }
   try { await wsRpc('schedule.create',{label:label||undefined,message:message||undefined,task:task||undefined,cadence}); $('schedStatus').textContent='scheduled'; loadSched(); } catch(e){ $('schedStatus').textContent='error: '+e.message; } }
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if(!b) return; const act=b.dataset.act, id=b.dataset.id; if(act==='schedrun'){ wsRpc('schedule.runNow',{id}).then(loadSched); } else if(act==='schedtoggle'){ wsRpc('schedule.setDisabled',{id,disabled:b.dataset.d==='1'}).then(loadSched); } else if(act==='schedrm'){ wsRpc('schedule.remove',{id}).then(loadSched); } });
+
+async function searchMemory(q){
+  const query = (q !== undefined) ? q : $('mQuery').value.trim();
+  const subject = $('mSubject').value.trim();
+  try {
+    const hits = await wsRpc('memory.search', { query, subject: subject || undefined, limit: 50 });
+    const rows = (hits || []).map(function(h){
+      const m = h.memory || h;
+      const age = Math.max(0, Math.round((Date.now() - m.createdAt) / 86400000));
+      return '<tr><td>' + (h.score != null ? h.score.toFixed(2) : '') + '</td><td>' + esc(m.subject || '') + '</td><td>' + esc(m.layer || '') + '</td><td>' + esc(m.text) + (m.supersededBy ? ' <span class="dim">(superseded)</span>' : '') + '</td><td>' + esc(new Date(m.validFrom).toISOString().slice(0,10)) + '</td><td>' + age + 'd</td></tr>';
+    }).join('');
+    $('memRows').innerHTML = rows || '<tr><td colspan="6" class="dim">no results</td></tr>';
+    $('memStatus').textContent = (hits || []).length + ' hits';
+  } catch(e){ toast(String(e), false); }
+}
+async function addMemory(){
+  const t = $('mAdd').value.trim();
+  if (!t) return;
+  try {
+    await wsRpc('memory.add', { text: t, subject: 'user' });
+    $('mAdd').value = '';
+    $('memStatus').textContent = 'remembered';
+    searchMemory($('mQuery').value.trim());
+  } catch(e){ toast(String(e), false); }
+}
+async function consMemory(){
+  $('memStatus').textContent = 'consolidating…';
+  try {
+    const r = await wsRpc('memory.consolidate', {});
+    const merged = (r.clusters || []).filter(function(c){ return c.merged; }).length;
+    $('memStatus').textContent = 'checked ' + (r.memoriesChecked || 0) + ' memories, merged ' + merged + ' clusters';
+    searchMemory($('mQuery').value.trim());
+  } catch(e){ toast(String(e), false); $('memStatus').textContent = ''; }
+}
 </script>
 </body>
 </html>`;
