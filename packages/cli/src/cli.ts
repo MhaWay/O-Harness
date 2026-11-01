@@ -107,6 +107,7 @@ export async function main(args: string[]): Promise<void> {
       const mo = flag(args, "model"); if (mo) params.model = mo;
       const ef = flag(args, "effort"); if (ef) params.effort = ef;
       const mt = flag(args, "max-turns"); if (mt) params.maxTurns = Number(mt);
+      const dep = flag(args, "depends-on"); if (dep) params.dependsOn = dep.split(",").map((x) => x.trim()).filter(Boolean);
       const m = await callOnce("agents.spawn", params, port);
       console.log(JSON.stringify(m, null, 2));
       return;

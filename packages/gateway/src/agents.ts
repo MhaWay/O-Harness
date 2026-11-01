@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chatOnce } from "./models.ts";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { SettingsStore, Effort } from "./models.ts";
 import type { SessionsStore } from "@o-harness/core";
 import type { MemoryStore } from "@o-harness/core";
@@ -30,7 +32,7 @@ export interface Minion {
   id: string;
   title: string;
   task: string;
-  status: "queued" | "running" | "done" | "error" | "killed";
+  status: "queued" | "waiting" | "running" | "done" | "error" | "killed";
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
@@ -39,6 +41,7 @@ export interface Minion {
   effort?: Effort;
   maxTurns: number;
   turnsUsed: number;
+  dependsOn?: string[];
   result?: string;
   error?: string;
 }
@@ -52,6 +55,7 @@ export interface AgentsOptions {
   listDeviceTools?: () => Record<string, { name: string; description?: string; parameters?: Record<string, unknown> }[]>;
   callTool?: (deviceId: string, tool: string, args: unknown, requester: string) => Promise<unknown>;
   onChange: (m: Minion) => void;
+  storeDir?: string;
   concurrency?: number;
 }
 
@@ -98,31 +102,69 @@ export class AgentRuntime {
   #queue: Minion[] = [];
   #running = 0;
   #ac = new Map<string, AbortController>();
+  #storeFile?: string;
+  #loaded = false;
   #maxIdleMs = 5 * 60_000; // keep memory of finished minions, prune via list filter
 
   constructor(opts: AgentsOptions) {
     this.#opts = { concurrency: 2, ...opts } as any;
+    if (opts.storeDir) this.#storeFile = join(opts.storeDir, "minions.json");
   }
 
-  spawn(task: string, opts: { title?: string; model?: string; effort?: Effort; maxTurns?: number } = {}): Minion {
+  #persist() {
+    if (!this.#storeFile) return;
+    try {
+      const dir = dirname(this.#storeFile);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const recs = [...this.#minions.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 200);
+      writeFileSync(this.#storeFile, JSON.stringify({ savedAt: Date.now(), minions: recs }));
+    } catch { /* best effort */ }
+  }
+
+  load() {
+    if (!this.#storeFile || this.#loaded) return;
+    this.#loaded = true;
+    let recs: any[] = [];
+    try { recs = JSON.parse(readFileSync(this.#storeFile, "utf8"))?.minions ?? []; } catch { return; }
+    for (const r of recs) {
+      if (!r || !r.id || this.#minions.has(r.id)) continue;
+      const m = r as Minion;
+      if (m.status === "running") { m.status = "error"; m.error = "interrupted (gateway restart)"; m.finishedAt = Date.now(); }
+      else if (m.status === "queued" || m.status === "waiting") { m.status = "queued"; this.#queue.push(m); }
+      this.#minions.set(m.id, m);
+    }
+    this.#pump();
+  }
+
+  #depsMet(m: Minion): boolean {
+    if (!m.dependsOn || !m.dependsOn.length) return true;
+    return m.dependsOn.every((id) => {
+      const d = this.#minions.get(id);
+      return !d || d.status === "done" || d.status === "error" || d.status === "killed";
+    });
+  }
+
+  spawn(task: string, opts: { title?: string; model?: string; effort?: Effort; maxTurns?: number; dependsOn?: string[] } = {}): Minion {
     const id = randomUUID().slice(0, 8);
     const session = this.#opts.sessions.create(opts.title || task.slice(0, 60) || "minion", id);
     const m: Minion = {
       id, title: opts.title || task.slice(0, 60) || "minion", task,
       status: "queued", createdAt: Date.now(), sessionId: id,
       model: opts.model, effort: opts.effort, maxTurns: opts.maxTurns ?? 12, turnsUsed: 0,
+      dependsOn: opts.dependsOn,
     };
     this.#minions.set(id, m);
     this.#queue.push(m);
     this.#pump();
+    this.#persist();
     return m;
   }
 
   list() {
     return [...this.#minions.values()]
       .sort((a, b) => b.createdAt - a.createdAt)
-      .map(({ id, title, task, status, createdAt, startedAt, finishedAt, sessionId, model, effort, maxTurns, turnsUsed, result, error }) =>
-        ({ id, title, task, status, createdAt, startedAt, finishedAt, sessionId, model, effort, maxTurns, turnsUsed, result, error }));
+      .map(({ id, title, task, status, createdAt, startedAt, finishedAt, sessionId, model, effort, maxTurns, turnsUsed, result, error, dependsOn }) =>
+        ({ id, title, task, status, createdAt, startedAt, finishedAt, sessionId, model, effort, maxTurns, turnsUsed, result, error, dependsOn }));
   }
 
   get(id: string): Minion | undefined { return this.#minions.get(id); }
@@ -130,16 +172,18 @@ export class AgentRuntime {
   kill(id: string): boolean {
     const m = this.#minions.get(id);
     if (!m) return false;
-    if (m.status === "queued") {
+    if (m.status === "queued" || m.status === "waiting") {
       this.#queue = this.#queue.filter((q) => q !== m);
       m.status = "killed"; m.finishedAt = Date.now();
       this.#opts.onChange(m);
+      this.#persist();
       return true;
     }
     if (m.status === "running") {
       this.#ac.get(id)?.abort();
       m.status = "killed"; m.finishedAt = Date.now();
       this.#opts.onChange(m);
+      this.#persist();
       return true;
     }
     return false;
@@ -147,9 +191,15 @@ export class AgentRuntime {
 
   #pump() {
     while (this.#running < this.#opts.concurrency && this.#queue.length) {
-      const m = this.#queue.shift()!;
+      const idx = this.#queue.findIndex((m) => this.#depsMet(m));
+      if (idx < 0) break;
+      const [m] = this.#queue.splice(idx, 1);
       this.#running++;
       void this.#run(m).finally(() => { this.#running--; this.#pump(); });
+    }
+    for (const m of this.#queue) {
+      const want = this.#depsMet(m) ? "queued" : "waiting";
+      if ((m.status === "queued" || m.status === "waiting") && m.status !== want) m.status = want;
     }
   }
 
@@ -235,6 +285,7 @@ export class AgentRuntime {
         this.#log(m, "note", { role: "assistant", content: m.result });
         this.#ac.delete(m.id);
         this.#opts.onChange(m);
+        this.#persist();
         return;
       }
       if (ac.signal.aborted) { m.status = "killed"; }
@@ -247,6 +298,7 @@ export class AgentRuntime {
     }
     this.#ac.delete(m.id);
     this.#opts.onChange(m);
+    this.#persist();
   }
 
   #log(m: Minion, kind: string, data: unknown) {

@@ -113,6 +113,7 @@ export class Gateway {
       listDeviceTools: () => this.tools.list(),
       callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester ?? "minion"),
       onChange: (m) => this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error }),
+      storeDir: join(dataDirOf(dataDir), "minions"),
     });
     this.config = {
       host: config.host ?? "0.0.0.0",
@@ -153,6 +154,8 @@ export class Gateway {
   }
 
   async start() {
+    this.agents.load();
+
     this.rpc.set(Methods.DevicesList, () => this.registry.listPublic());
     this.rpc.set(Methods.DeviceInfo, (p) => {
       const d = this.registry.get(String(p?.deviceId));
@@ -220,6 +223,7 @@ export class Gateway {
         model: p?.model ? String(p.model) : undefined,
         effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
         maxTurns: p?.maxTurns ? Number(p.maxTurns) : undefined,
+        dependsOn: Array.isArray(p?.dependsOn) ? p.dependsOn.map(String) : undefined,
       });
     });
     this.rpc.set(Methods.AgentsList, () => this.agents.list());
