@@ -10,6 +10,7 @@ import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, publi
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
+import { AgentRuntime } from "./agents.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileP = promisify(execFile);
@@ -72,6 +73,7 @@ export class Gateway {
   sessions: SessionsStore;
   memory: MemoryStore;
   settings: SettingsStore;
+  agents: AgentRuntime;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
@@ -84,6 +86,13 @@ export class Gateway {
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
+    this.agents = new AgentRuntime({
+      settings: this.settings,
+      sessions: this.sessions,
+      memory: this.memory,
+      callDevice: (deviceId, method, params) => this.#callDevice(deviceId, method, params ?? {}),
+      onChange: (m) => this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error }),
+    });
     this.config = {
       host: config.host ?? "0.0.0.0",
       port: config.port ?? base.port,
@@ -180,6 +189,26 @@ export class Gateway {
       layer: p?.layer ? String(p.layer) : undefined,
       validity: p?.validity === "history" ? "history" : "now",
     }));
+
+    // agents: minions — sub-agent employees that run a tool-calling loop per task
+    this.rpc.set(Methods.AgentsSpawn, (p) => {
+      const task = typeof p?.task === "string" ? p.task : "";
+      if (!task.trim()) throw new Error("agents.spawn: task required");
+      return this.agents.spawn(task, {
+        title: p?.title ? String(p.title) : undefined,
+        model: p?.model ? String(p.model) : undefined,
+        effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
+        maxTurns: p?.maxTurns ? Number(p.maxTurns) : undefined,
+      });
+    });
+    this.rpc.set(Methods.AgentsList, () => this.agents.list());
+    this.rpc.set(Methods.AgentsGet, (p) => {
+      const m = this.agents.get(String(p?.id));
+      if (!m) return null;
+      const s = this.sessions.get(m.sessionId);
+      return { ...m, entries: s?.entries ?? [] };
+    });
+    this.rpc.set(Methods.AgentsKill, (p) => ({ ok: this.agents.kill(String(p?.id)) }));
 
     // models & settings (GUI uses these; apiKey never returned by settings.get)
     this.rpc.set(Methods.SettingsGet, () => {

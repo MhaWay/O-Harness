@@ -52,6 +52,7 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
   <nav>
     <button data-tab="overview" class="on">Overview</button>
     <button data-tab="sessions">Sessions</button>
+    <button data-tab="minions">Minions</button>
     <button data-tab="devices">Devices</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -76,6 +77,22 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         </div>
         <select id="sessSelect" onchange="loadSessionDetail()" style="width:100%"></select>
         <pre id="sessDetail" style="margin-top:10px">select a session…</pre>
+      </div>
+    </section>
+    <section id="tab-minions">
+      <div class="card"><h2>Dispatch a task</h2>
+        <div class="row"><textarea id="minTask" placeholder="Describe the task for the minion..." style="min-height:60px"></textarea></div>
+        <div class="row">
+          <input id="minTitle" placeholder="title (optional)" style="flex:1">
+          <select id="minEffort"><option value="none">thinking: none</option><option value="low">low</option><option value="medium">medium</option><option value="xhigh">xhigh</option></select>
+          <input id="minTurns" type="number" placeholder="max turns" value="12" style="width:90px">
+          <button class="act" onclick="spawnMinion()">Dispatch</button>
+        </div>
+      </div>
+      <div class="card"><h2>Minions</h2>
+        <div class="row"><button class="act" onclick="loadMinions()">Refresh</button><span class="dim">auto-refresh while this tab is open</span></div>
+        <table><thead><tr><th>id</th><th>title</th><th>status</th><th>turns</th><th>result / error</th><th></th></tr></thead>
+        <tbody id="minRows"></tbody></table>
       </div>
     </section>
     <section id="tab-settings">
@@ -159,6 +176,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (b.dataset.tab==='settings') loadSettingsTab();
   if (b.dataset.tab==='devices') loadDevices();
   if (b.dataset.tab==='sessions') loadSessions();
+  if (b.dataset.tab==='minions') { loadMinions(); if(!minTimer) minTimer=setInterval(loadMinions,3000); } else if (minTimer){ clearInterval(minTimer); minTimer=null; }
   if (b.dataset.tab==='overview') loadOverview();
 });
 
@@ -250,6 +268,37 @@ async function checkUpdates(){ $('updInfo').textContent='git pull…'; try { con
 function loadSettingsJson(){ $('settingsJson').value = JSON.stringify(settings, null, 2); }
 async function saveSettingsJson(){ try { settings = JSON.parse($('settingsJson').value); await wsRpc('settings.save',{settings}); providers=settings.providers||[]; renderProviders(); fillDefaultSelects(); $('settingsMsg').innerHTML='<span class="ok">saved</span>'; } catch(e){ $('settingsMsg').innerHTML='<span class="bad">'+esc(String(e))+'</span>'; } }
 
+let minTimer = null, minDetail = null;
+async function loadMinions(){
+  try { const list = await wsRpc('agents.list',{});
+    $('minRows').innerHTML = list.map(m =>
+      '<tr><td>'+esc(m.id)+'</td><td>'+esc(m.title)+'</td><td class="'+(m.status==='done'?'ok':(m.status==='error'||m.status==='killed')?'bad':'dim')+'">'+esc(m.status)+'</td>'+
+      '<td>'+m.turnsUsed+'/'+m.maxTurns+'</td><td style="max-width:340px">'+esc(m.result? String(m.result).slice(0,140): (m.error? '!'+m.error : ''))+'</td>'+
+      '<td><button class="ghost" data-act="show" data-id="'+esc(m.id)+'">show</button> '+
+      ((m.status==='running'||m.status==='queued')?'<button class="danger" data-act="kill" data-id="'+esc(m.id)+'">kill</button>':'')+'</td></tr>'
+    ).join('') || '<tr><td colspan="6" class="dim">no minions</td></tr>';
+  } catch(e){ $('minRows').innerHTML = '<tr><td colspan="6" class="bad">'+esc(String(e))+'</td></tr>'; }
+}
+async function spawnMinion(){
+  const task = $('minTask').value.trim(); if(!task){ toast('task required',false); return; }
+  try { const m = await wsRpc('agents.spawn',{ task, title: $('minTitle').value.trim() || undefined, effort: $('minEffort').value, maxTurns: Number($('minTurns').value)||12 });
+    toast('dispatched '+m.id); $('minTask').value=''; $('minTitle').value=''; loadMinions();
+  } catch(e){ toast(String(e),false); }
+}
+async function showMinion(id){
+  try { const m = await wsRpc('agents.get',{id});
+    $('minRows').innerHTML += '<tr><td colspan="6"><pre style="max-height:260px;overflow:auto">['+esc(m.status)+'] '+esc(m.title)+'\\n'+esc(m.task)+'\\n\\n'+(m.entries||[]).map(e=>e.seq+' ['+e.kind+'] '+esc(JSON.stringify(e.data).slice(0,500))).join('\\n')+'</pre></td></tr>';
+  } catch(e){ toast(String(e),false); }
+}
+async function killMinion(id){ try { await wsRpc('agents.kill',{id}); toast('killed '+id); loadMinions(); } catch(e){ toast(String(e),false); } }
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest && ev.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.getAttribute('data-act'), id = t.getAttribute('data-id');
+  if (act === 'show') showMinion(id);
+  else if (act === 'kill') killMinion(id);
+});
 ping(); loadOverview(); setInterval(ping, 15000);
 </script>
 </body>

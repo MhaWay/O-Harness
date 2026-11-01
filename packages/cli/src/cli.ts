@@ -97,6 +97,45 @@ export async function main(args: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "agents" || cmd === "minions") {
+    const sub = rest[0] ?? "list";
+    if (sub === "spawn") {
+      const task = withoutFlag(rest.slice(1), "title", "model", "effort", "max-turns").join(" ");
+      if (!task) throw new Error("usage: o-h agents spawn <task> [--title T] [--model M] [--effort E] [--max-turns N]");
+      const params: Record<string, unknown> = { task };
+      const t = flag(args, "title"); if (t) params.title = t;
+      const mo = flag(args, "model"); if (mo) params.model = mo;
+      const ef = flag(args, "effort"); if (ef) params.effort = ef;
+      const mt = flag(args, "max-turns"); if (mt) params.maxTurns = Number(mt);
+      const m = await callOnce("agents.spawn", params, port);
+      console.log(JSON.stringify(m, null, 2));
+      return;
+    }
+    if (sub === "list") {
+      const list = await callOnce<any[]>("agents.list", {}, port);
+      for (const m of list) console.log(m.id + " [" + m.status + "] t" + m.turnsUsed + "/" + m.maxTurns + " " + m.title + (m.result ? " -> " + String(m.result).slice(0, 80) : "") + (m.error ? " !! " + m.error : ""));
+      if (!list.length) console.log("(no minions)");
+      return;
+    }
+    if (sub === "show") {
+      const id = withoutFlag(rest.slice(1), "follow")[0];
+      if (!id) throw new Error("usage: o-h agents show <id>");
+      const m = await callOnce<any>("agents.get", { id }, port);
+      if (!m) throw new Error("unknown minion: " + id);
+      console.log(JSON.stringify({ ...m, entries: undefined }, null, 2));
+      console.log("--- entries ---");
+      for (const e of m.entries ?? []) console.log("[" + e.seq + " " + e.kind + "] " + JSON.stringify(e.data).slice(0, 300));
+      return;
+    }
+    if (sub === "kill") {
+      const id = rest[1];
+      if (!id) throw new Error("usage: o-h agents kill <id>");
+      console.log(JSON.stringify(await callOnce("agents.kill", { id }, port)));
+      return;
+    }
+    throw new Error("unknown agents subcommand: " + sub);
+  }
+
   if (cmd === "memory") {
     const sub = rest[0] ?? "list";
     if (sub === "add") {
