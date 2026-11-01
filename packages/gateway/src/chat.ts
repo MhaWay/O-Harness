@@ -1,7 +1,7 @@
 // Chat: conversational interface bound to a persistent session, with a bounded tool loop.
 // History = session entries of kind 'chat' (user/assistant); memory injected as context.
 // Tools: local exec/fs/memory + device-offered tools ("<deviceId>:<tool>", may prompt owner).
-import { chatOnce, type SettingsStore } from "./models.ts";
+import { chatOnceStream, type SettingsStore } from "./models.ts";
 import type { SessionsStore, MemoryStore } from "@o-harness/core";
 
 export interface ChatOptions {
@@ -129,12 +129,12 @@ export class ChatRuntime {
     let text = "";
     try {
       for (let turn = 0; turn < maxTurns; turn++) {
-        const out = await chatOnce({
+        const out = await chatOnceStream({
           baseUrl: resolved.baseUrl, apiKey: resolved.apiKey,
           model: opts.model ?? resolved.model.id,
           effort: opts.effort ?? resolved.effort,
           messages, tools: toolDefs,
-        });
+        }, (tok, reasoning) => this.#opts.broadcast?.("chat.stream", { sessionId, turn, tok, reasoning: reasoning ? true : undefined }));
         const msg = out?.choices?.[0]?.message ?? {};
         if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
           messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });

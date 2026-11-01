@@ -143,3 +143,56 @@ export async function chatOnce(opts: { baseUrl: string; apiKey?: string; model: 
   if (!res.ok) throw new Error("chat/completions HTTP " + res.status + ": " + (await res.text()).slice(0, 300));
   return await res.json();
 }
+
+
+/** Streaming chatOnce: consumes SSE chunks, calls onToken for each content delta, returns the same shape as chatOnce. */
+export async function chatOnceStream(opts: { baseUrl: string; apiKey?: string; model: string; messages: unknown[]; effort?: Effort; extra?: Record<string, unknown>; tools?: unknown[] }, onToken?: (tok: string, reasoning?: boolean) => void): Promise<any> {
+  const body: Record<string, unknown> = {
+    model: opts.model,
+    messages: opts.messages,
+    stream: true,
+    ...(opts.effort && opts.effort !== "none" ? { reasoning_effort: opts.effort } : {}),
+    ...opts.extra,
+    ...(opts.tools ? { tools: opts.tools, tool_choice: "auto" } : {}),
+  };
+  const base = opts.baseUrl.replace(/\/+$/, "");
+  const res = await fetch(base + "/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(opts.apiKey ? { authorization: "Bearer " + opts.apiKey } : {}) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(180_000),
+  });
+  if (!res.ok || !res.body) throw new Error("chat/completions HTTP " + res.status + ": " + (await res.text().catch(() => "")).slice(0, 300));
+  const dec = new TextDecoder();
+  let buf = "";
+  let content = "";
+  const toolAcc: Array<{ id: string; type: string; function: { name: string; arguments: string } }> = [];
+  for await (const chunk of res.body as ReadableStream<Uint8Array>) {
+    buf += dec.decode(chunk, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      let j: any;
+      try { j = JSON.parse(data); } catch { continue; }
+      const d = j?.choices?.[0]?.delta ?? {};
+      if (typeof d.content === "string" && d.content) { content += d.content; onToken?.(d.content, false); }
+      else if (typeof d.reasoning === "string" && d.reasoning) { onToken?.("", true); }
+      if (Array.isArray(d.tool_calls)) {
+        for (const tc of d.tool_calls) {
+          const idx = Number(tc.index ?? 0);
+          if (!toolAcc[idx]) toolAcc[idx] = { id: tc.id ?? "", type: "function", function: { name: "", arguments: "" } };
+          if (tc.id) toolAcc[idx].id = tc.id;
+          if (tc.function?.name) toolAcc[idx].function.name += tc.function.name;
+          if (tc.function?.arguments) toolAcc[idx].function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+  const toolCalls = toolAcc.filter(Boolean);
+  return { choices: [{ message: { content, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) } }] };
+}
+

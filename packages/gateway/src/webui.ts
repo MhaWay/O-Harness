@@ -269,17 +269,46 @@ async function loadChat(){
     $('chatLog').innerHTML = (h && h.length) ? h.map(function(e){ return '<b>' + esc(e.role) + '</b> ' + esc(e.text) + (e.tools ? ' <span style="color:#8af;font-size:.8em">[used: ' + e.tools.map(esc).join(', ') + ']</span>' : ''); }).join('<br>') : '(no messages yet)';
   } catch(e){ toast(String(e), false); }
 }
-async function sendChat(){
+var streamLive = null;
+function sendChat(){
   const t = $('chatInput').value.trim();
   if (!t) return;
   $('chatInput').value = '';
-  $('chatStatus').textContent = 'thinking…';
-  try {
-    const sel = $('chatSession');
-    await wsRpc('chat.send', { sessionId: (sel && sel.value ? sel.value : 'main'), message: t });
-    $('chatStatus').textContent = '';
+  $('chatStatus').textContent = '…';
+  const sid = ($('chatSession') && $('chatSession').value) ? $('chatSession').value : 'main';
+  streamLive = { text: '', el: null };
+  const ws = new WebSocket((location.protocol==='https:'?'wss':'ws') + '://' + location.host + '/api?token=' + encodeURIComponent(token));
+  const id = 'sc-' + Math.random().toString(36).slice(2);
+  let settled = false;
+  const done = (err)=>{ if (settled) return; settled = true; clearTimeout(T); try{ws.close();}catch(e){}
+    streamLive = null; $('chatStatus').textContent = '';
+    if (err) toast(String(err), false);
     loadChat();
-  } catch(e){ $('chatStatus').textContent = ''; toast(String(e), false); }
+  };
+  const T = setTimeout(()=>done('chat timeout'), 300000);
+  ws.onopen = () => ws.send(JSON.stringify({type:'rpc:req',id,method:'chat.send',params:{sessionId:sid,message:t}}));
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+    if (m.type==='event' && m.topic==='chat.stream' && m.data && m.data.sessionId===sid) {
+      if (!streamLive) return;
+      if (m.data.reasoning) { $('chatStatus').textContent = 'thinking…'; return; }
+      streamLive.text += String(m.data.tok || '');
+      $('chatStatus').textContent = '';
+      if (!streamLive.el) {
+        const log = $('chatLog');
+        if (log.textContent === '(no messages yet)') log.innerHTML = '';
+        const d = document.createElement('div');
+        d.innerHTML = '<b>assistant</b> ';
+        const span = document.createElement('span'); span.id = 'streamText';
+        d.appendChild(span); log.appendChild(d);
+        streamLive.el = span;
+      }
+      streamLive.el.textContent = streamLive.text;
+      const log = $('chatLog'); log.scrollTop = log.scrollHeight;
+    }
+    else if (m.type==='rpc:res' && m.id===id) { done(m.error!==undefined ? new Error(m.error) : null); }
+  };
+  ws.onerror = () => done(new Error('ws error'));
 }
 document.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target && e.target.id === 'chatInput') sendChat(); });
 
