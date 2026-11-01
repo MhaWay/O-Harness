@@ -8,6 +8,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { SchedulerRuntime } from './scheduler.ts';
 import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
@@ -89,6 +90,7 @@ export class Gateway {
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
   tools: ToolBroker;
+  scheduler: SchedulerRuntime;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
@@ -128,6 +130,12 @@ export class Gateway {
       settings: this.settings,
       sessions: this.sessions,
       memory: this.memory,
+      broadcast: (t, d) => this.#broadcastEvent(t, d),
+    });
+    this.scheduler = new SchedulerRuntime({
+      storeDir: join(dataDirOf(dataDir), 'schedules'),
+      chat: (sessionId, message) => this.chat.chat(sessionId || 'main', message),
+      spawn: (task, opts) => this.agents.spawn(task, { title: opts.title }),
       broadcast: (t, d) => this.#broadcastEvent(t, d),
     });
     this.config = {
@@ -171,6 +179,7 @@ export class Gateway {
 
   async start() {
     this.agents.load();
+    this.scheduler.start();
 
     this.rpc.set(Methods.DevicesList, () => this.registry.listPublic());
     this.rpc.set(Methods.DeviceInfo, (p) => {
@@ -266,6 +275,19 @@ export class Gateway {
       if (!s) return null;
       return s.entries.filter((e) => e.kind === "chat").map((e) => ({ seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text }));
     });
+
+    // scheduler: time-triggered chat messages and minion runs
+    this.rpc.set(Methods.ScheduleCreate, (p) => this.scheduler.create({
+      label: p?.label ? String(p.label) : undefined,
+      message: p?.message ? String(p.message) : undefined,
+      task: p?.task ? String(p.task) : undefined,
+      sessionId: p?.sessionId ? String(p.sessionId) : undefined,
+      cadence: p?.cadence as any,
+    }));
+    this.rpc.set(Methods.ScheduleList, () => this.scheduler.list());
+    this.rpc.set(Methods.ScheduleRemove, (p) => ({ ok: this.scheduler.remove(String(p?.id ?? "")) }));
+    this.rpc.set(Methods.ScheduleRunNow, (p) => { const j = this.scheduler.runNow(String(p?.id ?? "")); return j ? { ok: true, id: j.id } : { ok: false, error: "unknown job" }; });
+    this.rpc.set(Methods.ScheduleSetDisabled, (p) => ({ ok: this.scheduler.setDisabled(String(p?.id ?? ""), Boolean(p?.disabled)) }));
 
     // models & settings (GUI uses these; apiKey never returned by settings.get)
     this.rpc.set(Methods.SettingsGet, () => {

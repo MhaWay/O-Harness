@@ -119,6 +119,37 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("unknown chat subcommand: " + sub);
   }
 
+  if (cmd === "schedule" || cmd === "sched") {
+    const sub = rest[0] ?? "list";
+    const sargs = rest.slice(1);
+    if (sub === "create") {
+      const message = withoutFlag(sargs, "task", "session", "every", "daily", "once", "label").join(" ");
+      const task = flag(sargs, "task");
+      let cadence: any = null;
+      const ev = flag(sargs, "every");
+      const dy = flag(sargs, "daily");
+      const oc = flag(sargs, "once");
+      if (ev) cadence = { type: "every", minutes: Number(ev) };
+      else if (dy) cadence = { type: "daily", time: dy };
+      else if (oc) cadence = { type: "once", at: oc };
+      else throw new Error("usage: o-h schedule create <message> [--every N | --daily HH:mm | --once ISO] [--task T] [--session S] [--label L]");
+      const r = await callOnce("schedule.create", { message: message || undefined, task: task || undefined, sessionId: flag(sargs, "session"), label: flag(sargs, "label"), cadence }, port);
+      console.log(JSON.stringify(r));
+      return;
+    }
+    if (sub === "list") {
+      const rows = await callOnce<any[]>("schedule.list", {}, port);
+      for (const j of rows) console.log(j.id + " [" + (j.disabled ? "disabled" : "next " + new Date(j.nextRunAt).toLocaleString()) + "] " + j.kind + " " + JSON.stringify(j.label ?? "") + (j.lastResult ? " -> " + String(j.lastResult).slice(0, 70) : ""));
+      if (!rows.length) console.log("(no scheduled jobs)");
+      return;
+    }
+    if (sub === "remove" || sub === "rm") { const id = sargs[0]; if (!id) throw new Error("usage: o-h schedule remove <id>"); await callOnce("schedule.remove", { id }, port); console.log(JSON.stringify({ ok: true })); return; }
+    if (sub === "run") { const id = sargs[0]; if (!id) throw new Error("usage: o-h schedule run <id>"); console.log(JSON.stringify(await callOnce("schedule.runNow", { id }, port))); return; }
+    if (sub === "enable") { const id = sargs[0]; if (!id) throw new Error("usage: o-h schedule enable <id>"); await callOnce("schedule.setDisabled", { id, disabled: false }, port); console.log(JSON.stringify({ ok: true })); return; }
+    if (sub === "disable") { const id = sargs[0]; if (!id) throw new Error("usage: o-h schedule disable <id>"); await callOnce("schedule.setDisabled", { id, disabled: true }, port); console.log(JSON.stringify({ ok: true })); return; }
+    throw new Error("unknown schedule subcommand: " + sub);
+  }
+
   if (cmd === "agents" || cmd === "minions") {
     const sub = rest[0] ?? "list";
     if (sub === "spawn") {

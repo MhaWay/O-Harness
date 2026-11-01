@@ -43,6 +43,11 @@ export const Methods = {
   GrantsRevoke: "grants.revoke",
   ChatSend: "chat.send",
   ChatHistory: "chat.history",
+  ScheduleCreate: "schedule.create",
+  ScheduleList: "schedule.list",
+  ScheduleRemove: "schedule.remove",
+  ScheduleRunNow: "schedule.runNow",
+  ScheduleSetDisabled: "schedule.setDisabled",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };
