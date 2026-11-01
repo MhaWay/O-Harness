@@ -67,6 +67,15 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <table><thead><tr><th>id</th><th>name</th><th>kind</th><th>status</th><th>transport</th></tr></thead>
         <tbody id="devRows"></tbody></table>
       </div>
+      <div class="card"><h2>Pairing</h2>
+        <div class="row">
+          <input id="pairKind" placeholder="kind (mobile/remote)" style="max-width:150px">
+          <button class="act" onclick="createPairCode()">Create code</button>
+        </div>
+        <div id="pairOut" class="dim">no active code</div>
+        <table style="margin-top:8px"><thead><tr><th>id</th><th>name</th><th>kind</th><th>scopes</th><th>last seen</th><th></th></tr></thead>
+        <tbody id="pairRows"></tbody></table>
+      </div>
     </section>
     <section id="tab-sessions">
       <div class="card"><h2>Sessions</h2>
@@ -174,7 +183,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); $('tab-'+b.dataset.tab).classList.add('on');
   if (b.dataset.tab==='settings') loadSettingsTab();
-  if (b.dataset.tab==='devices') loadDevices();
+  if (b.dataset.tab==='devices') { loadDevices(); loadPairing(); }
   if (b.dataset.tab==='sessions') loadSessions();
   if (b.dataset.tab==='minions') { loadMinions(); if(!minTimer) minTimer=setInterval(loadMinions,3000); } else if (minTimer){ clearInterval(minTimer); minTimer=null; }
   if (b.dataset.tab==='overview') loadOverview();
@@ -189,6 +198,20 @@ async function loadOverview(){
   } catch(e){ $('ovDefault').textContent = String(e); }
 }
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+async function loadPairing(){
+  try { const list = await wsRpc('pairing.list',{});
+    $('pairRows').innerHTML = list.map(d=>
+      '<tr><td>'+esc(d.id)+'</td><td>'+esc(d.name)+'</td><td>'+esc(d.kind)+'</td><td>'+esc(d.revokedAt?'REVOKED':d.scopes.join(','))+'</td><td class="dim">'+esc(d.lastSeenAt? new Date(d.lastSeenAt).toLocaleString():'-')+'</td>'+
+      '<td>'+(d.revokedAt?'':'<button class="ghost" data-act="revpair" data-id="'+esc(d.id)+'">revoke</button>')+'</td></tr>').join('') || '<tr><td colspan="6" class="dim">nothing paired</td></tr>';
+  } catch(e){ $('pairRows').innerHTML = '<tr><td colspan="6" class="bad">'+esc(String(e))+'</td></tr>'; }
+}
+async function createPairCode(){
+  try { const c = await wsRpc('pairing.create',{ kind: $('pairKind').value.trim() || 'mobile', scopes: ['read','write'] });
+    $('pairOut').innerHTML = 'code <b>'+esc(c.code)+'</b> — expires in '+Math.round((c.expiresAt-Date.now())/60000)+' min'; toast('pairing code '+c.code);
+  } catch(e){ toast(String(e),false); }
+}
+async function revokePair(id){ try { await wsRpc('pairing.revoke',{id}); toast('revoked '+id); loadPairing(); } catch(e){ toast(String(e),false); } }
 
 async function loadDevices(){
   try { const list = await wsRpc('devices.list'); $('devRows').innerHTML = list.map(d=>
@@ -297,6 +320,7 @@ document.addEventListener('click', (ev) => {
   if (!t) return;
   const act = t.getAttribute('data-act'), id = t.getAttribute('data-id');
   if (act === 'show') showMinion(id);
+  else if (act === 'revpair') revokePair(id);
   else if (act === 'kill') killMinion(id);
 });
 ping(); loadOverview(); setInterval(ping, 15000);

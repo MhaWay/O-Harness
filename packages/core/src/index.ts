@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 export * from "./sessions.ts";
 export * from "./memory.ts";
+export * from "./pairing.ts";
 
 export type DeviceKind = "local" | "remote" | "mobile";
 
@@ -43,10 +44,10 @@ export class RpcRouter {
   set(method: string, h: Handler) { this.#handlers.set(method, h); }
   has(method: string) { return this.#handlers.has(method); }
   methods() { return [...this.#handlers.keys()]; }
-  async call(method: string, params: unknown): Promise<unknown> {
+  async call(method: string, params: unknown, ctx?: { deviceId?: string }): Promise<unknown> {
     const h = this.#handlers.get(method);
     if (!h) throw new Error("unknown method: " + String(method));
-    return await h(params ?? {}, {});
+    return await h(params ?? {}, ctx ?? {});
   }
 }
 

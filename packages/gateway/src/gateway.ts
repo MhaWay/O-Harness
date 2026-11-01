@@ -6,10 +6,11 @@ import { join, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
+import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -64,6 +65,8 @@ export function resolvePlugins(cfg: { plugins: string[] }, explicit?: string[]):
 
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; conn?: WebSocket }
 
+interface AuthCtx { admin?: boolean; deviceId?: string }
+
 export class Gateway {
   config: GatewayConfig;
   bus = new Bus();
@@ -74,9 +77,11 @@ export class Gateway {
   memory: MemoryStore;
   settings: SettingsStore;
   agents: AgentRuntime;
+  pairing: PairingStore;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
+  #wsCtx = new Map<WebSocket, AuthCtx>();
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true });
   #wssClient = new WebSocketServer({ noServer: true });
@@ -85,6 +90,7 @@ export class Gateway {
     const base = loadConfig(dataDir);
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.memory = new MemoryStore(dataDirOf(dataDir));
+    this.pairing = new PairingStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.agents = new AgentRuntime({
       settings: this.settings,
@@ -229,6 +235,13 @@ export class Gateway {
       this.settings.save(incoming);
       return { ok: true };
     });
+    this.rpc.set(Methods.PairingCreate, (p) => {
+      const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });
+      this.#broadcastEvent("pairing.created", { code: c.code, expiresAt: c.expiresAt });
+      return c;
+    });
+    this.rpc.set(Methods.PairingList, () => this.pairing.list().map((d) => ({ ...d, secret: undefined })));
+    this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); return { ok: true }; });
     this.rpc.set(Methods.ModelsFetch, (p) => fetchProviderModels(String(p?.baseUrl ?? ""), typeof p?.apiKey === "string" && p.apiKey !== "***set***" ? p.apiKey : undefined));
     this.rpc.set(Methods.ModelsTest, async (p) => {
       const ref = this.settings.resolveRef(String(p?.providerId ?? ""), String(p?.modelId ?? ""));
@@ -264,6 +277,27 @@ export class Gateway {
         res.end(WEBUI_HTML);
         return;
       }
+      if (url.pathname === "/pair" && req.method === "POST") {
+        let body = "";
+        req.on("data", (c) => { body += String(c); if (body.length > 10_000) req.destroy(); });
+        req.on("end", () => {
+          try {
+            const { code, name } = JSON.parse(body || "{}") as { code?: string; name?: string };
+            const { device, secret } = this.pairing.redeem(String(code ?? ""), String(name ?? "device"));
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: true, deviceId: device.id, secret }));
+          } catch (err) {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+          }
+        });
+        return;
+      }
+      if (url.pathname === "/m" || url.pathname === "/m/index.html") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(MOBILE_HTML);
+        return;
+      }
       if (url.pathname === "/health") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(encode({ ok: true, mode: "local", protocol: PROTOCOL_VERSION, port: this.config.port }));
@@ -296,24 +330,37 @@ export class Gateway {
     if (s) await new Promise<void>((r) => s.close(() => r()));
   }
 
-  #checkAuth(req: IncomingMessage): boolean {
+  #checkAuth(req: IncomingMessage): AuthCtx | null {
     const url = new URL(req.url ?? "/", "http://local");
     const bearer = (req.headers["authorization"] ?? "").replace(/^Bearer\s+/i, "");
     const token = url.searchParams.get("token") || bearer;
-    return token === this.config.token;
+    if (token === this.config.token) return { admin: true };
+    const secret = url.searchParams.get("secret") || "";
+    const paired = this.pairing.auth(secret);
+    if (paired) return { deviceId: paired.id };
+    return null;
+  }
+
+  #checkScope(ctx: AuthCtx | undefined, method: string) {
+    if (!ctx || ctx.admin || !ctx.deviceId) return;
+    const required = SCOPE_FOR_METHOD[method] ?? "read";
+    if (!this.pairing.scopesFor(ctx.deviceId).includes(required)) {
+      throw new Error("device " + ctx.deviceId + " lacks scope '" + required + "' for " + method);
+    }
   }
 
   #onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
-    if (!this.#checkAuth(req)) {
+    const auth = this.#checkAuth(req);
+    if (!auth) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
     }
     const url = new URL(req.url ?? "/", "http://local");
     if (url.pathname === "/node") {
-      this.#wssNode.handleUpgrade(req, socket, head, (ws) => this.#onNodeSocket(ws));
+      this.#wssNode.handleUpgrade(req, socket, head, (ws) => { this.#wsCtx.set(ws, auth); this.#onNodeSocket(ws); });
     } else if (url.pathname === "/api") {
-      this.#wssClient.handleUpgrade(req, socket, head, (ws) => this.#onClientSocket(ws));
+      this.#wssClient.handleUpgrade(req, socket, head, (ws) => { this.#wsCtx.set(ws, auth); this.#onClientSocket(ws); });
     } else {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       socket.destroy();
@@ -341,14 +388,15 @@ export class Gateway {
         return;
       }
       if (msg.type === Msg.RpcReq) {
-        this.rpc.call(String(msg.method), msg.params).then((result) => {
+        const ctx = this.#wsCtx.get(ws) ?? {};
+        this.#callScoped(String(msg.method), msg.params, ctx).then((result) => {
           ws.send(encode({ type: Msg.RpcRes, id: msg.id, result }));
         }).catch((err) => {
           ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) }));
         });
       }
     });
-    ws.on("close", () => { const d = device ?? this.#deviceByConn(ws); if (d) this.#markOffline(d.id); });
+    ws.on("close", () => { this.#wsCtx.delete(ws); const d = device ?? this.#deviceByConn(ws); if (d) this.#markOffline(d.id); });
     ws.on("error", () => { /* close handles it */ });
   }
 
@@ -371,6 +419,11 @@ export class Gateway {
       lastSeen: Date.now(),
     };
     this.registry.register(dev);
+    const ctx = this.#wsCtx.get(ws);
+    if (ctx && !ctx.admin && ctx.deviceId) {
+      this.pairing.touch(ctx.deviceId);
+      dev.meta = { ...dev.meta, paired: true };
+    }
     this.#broadcastEvent("device.up", { deviceId: dev.id, device: publicDevice(dev) });
     ws.send(encode({ type: Msg.Welcome, ok: true, nodeId: dev.id, protocol: PROTOCOL_VERSION }));
     return dev;
@@ -385,18 +438,24 @@ export class Gateway {
     }
   }
 
+  #callScoped(method: string, params: unknown, ctx: AuthCtx): Promise<unknown> {
+    try { this.#checkScope(ctx, method); } catch (e) { return Promise.reject(e); }
+    return this.rpc.call(method, params, { deviceId: ctx.admin ? undefined : ctx.deviceId });
+  }
+
   #onClientSocket(ws: WebSocket) {
     this.#clientSockets.add(ws);
     ws.on("message", (raw: Buffer | string) => {
       const msg = decode(String(raw));
       if (!msg || msg.type !== Msg.RpcReq || typeof msg.id !== "string") return;
-      this.rpc.call(String(msg.method), msg.params).then((result) => {
+      const ctx = this.#wsCtx.get(ws) ?? {};
+      this.#callScoped(String(msg.method), msg.params, ctx).then((result) => {
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, result }));
       }).catch((err) => {
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) }));
       });
     });
-    ws.on("close", () => this.#clientSockets.delete(ws));
+    ws.on("close", () => { this.#clientSockets.delete(ws); this.#wsCtx.delete(ws); });
     ws.on("error", () => { /* noop */ });
   }
 

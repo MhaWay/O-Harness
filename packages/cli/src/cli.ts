@@ -188,6 +188,44 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("usage: o-h node connect [--name <name>] [--device-id id] [--direct-port n] [--no-direct] [--overlay off|tailscale|zerotier] [--overlay-auth-key k] [--overlay-net id]");
   }
 
+  if (cmd === "pair") {
+    const sub = rest[0];
+    if (sub === "create") {
+      const kind = flag(args, "kind") ?? "mobile";
+      const scopes = (flag(args, "scopes") ?? "read,write").split(",").filter(Boolean);
+      const ttl = flag(args, "ttl");
+      const c = await callOnce("pairing.create", { kind, scopes, ttlMinutes: ttl ? Number(ttl) : undefined }, port);
+      console.log(JSON.stringify(c));
+      return;
+    }
+    if (sub === "list") {
+      const list = await callOnce("pairing.list", undefined, port);
+      for (const d of list as Array<{ id: string; name: string; kind: string; scopes: string[]; pairedAt: number; revokedAt?: number; lastSeenAt?: number }>) {
+        console.log(d.id + "  " + d.name + "  [" + d.kind + "]  scopes=" + (d.revokedAt ? "REVOKED" : d.scopes.join(",")) + "  lastSeen=" + (d.lastSeenAt ? new Date(d.lastSeenAt).toISOString() : "-"));
+      }
+      return;
+    }
+    if (sub === "revoke") {
+      const id = rest[1];
+      if (!id) throw new Error("usage: o-h pair revoke <deviceId>");
+      await callOnce("pairing.revoke", { id }, port);
+      console.log("revoked " + id);
+      return;
+    }
+    if (sub === "redeem") {
+      // device-side: exchange a 6-digit code for a secret via HTTP /pair
+      const code = rest[1];
+      const name = flag(args, "name") ?? hostname();
+      const base = flag(args, "url") ?? "http://127.0.0.1:" + port;
+      const r = await fetch(base + "/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, name }) });
+      const j = await r.json() as { ok: boolean; deviceId?: string; secret?: string; error?: string };
+      if (!j.ok) throw new Error(j.error ?? "pair failed");
+      console.log(JSON.stringify(j));
+      return;
+    }
+    throw new Error("usage: o-h pair create [--kind mobile|remote] [--scopes read,write,admin] [--ttl minutes] | list | revoke <id> | redeem <code> [--name n] [--url http://host:port]");
+  }
+
   if (cmd === "sessions") {
     const list = await callOnce("sessions.list", undefined, port);
     console.log(JSON.stringify(list, null, 2));
