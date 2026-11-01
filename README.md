@@ -74,3 +74,7 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 11. ✅ Slice 9: chat interface - `o-h say` / `chat history`, GUI Chat tab, assistant loop with memory-context injection
 12. ✅ Slice 10: authz hardening + TLS - CSPRNG codes, hashed secrets, rate-limited pairing, self-signed https/wss auto mode
 13. Next: npm publish (deferred), more device tools
+
+## Tests
+
+pnpm install && pnpm test   # node test runner over strip-types: core unit tests + gateway integration (in-process ws server on an ephemeral port, no model calls).
