@@ -21,6 +21,11 @@ const CHAT_SYSTEM = "You are O-Harness, a personal assistant running on the user
   "or call device tools named <deviceId>:<tool> (the device owner may be asked to approve). Prefer action over speculation; when something " +
   "durable is learned or decided, offer to remember it (or use memory_add for clear facts). Answer concisely.";
 
+// context window management: keep this many recent chat entries verbatim; fold older into a rolling summary
+// once more than SUMMARIZE_AT entries sit above the last summary.
+const KEEP_VERBATIM = 12;
+const SUMMARIZE_AT = 20;
+
 const LOCAL_TOOLS = [
   {
     name: "exec",
@@ -65,10 +70,33 @@ export class ChatRuntime {
     const userEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "user", kind: "chat", data: { role: "user", text: message } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: userEntry });
 
-    // history: chat entries of this session as messages
-    const history = s.entries
-      .filter((e) => e.kind === "chat" && (e.data as any)?.role)
-      .map((e) => ({ role: (e.data as any).role, content: String((e.data as any).text ?? "") }));
+    // context management: bounded verbatim tail + rolling summary (Letta/dsh-style)
+    const chatEntries = s.entries.filter((e) => e.kind === "chat" && (e.data as any)?.role);
+    const ls = [...s.entries].reverse().find((e) => e.kind === "summary");
+    let summaryText = ls ? String((ls.data as any).text ?? "") : "";
+    let verbatim = chatEntries.filter((e) => (e as any).seq > (ls ? (ls as any).seq : -1));
+    if (verbatim.length > SUMMARIZE_AT) {
+      // fold everything but the last KEEP_VERBATIM entries into the rolling summary
+      const old = verbatim.slice(0, verbatim.length - KEEP_VERBATIM);
+      const convo = old.map((e) => (e.data as any).role + ": " + String((e.data as any).text ?? "").slice(0, 600)).join("\n");
+      try {
+        const r = await chatOnce({
+          baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: resolved.model.id, effort: "low",
+          messages: [
+            { role: "system", content: "Summarize the conversation excerpt into at most 6 dense bullet points. Merge with the previous summary if given (keep all durable facts, decisions, numbers, open questions). Reply with bullets only." },
+            ...(summaryText ? [{ role: "user", content: "PREVIOUS SUMMARY:\n" + summaryText }] : []),
+            { role: "user", content: "EXCERPT:\n" + convo },
+          ],
+        });
+        summaryText = String(r?.choices?.[0]?.message?.content ?? "").trim() || summaryText || "(summary unavailable)";
+      } catch { /* keep previous summary */ }
+      const sEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "summary", data: { text: summaryText } });
+      this.#opts.broadcast?.("chat.summary", { sessionId, entry: sEntry });
+      verbatim = chatEntries.filter((e) => (e as any).seq > (sEntry as any).seq);
+      // the user message that triggered this call is always kept verbatim (it may predate the new summary)
+      if (!verbatim.some((e) => (e as any).seq === (userEntry as any).seq)) verbatim.push(userEntry);
+    }
+    const history = verbatim.map((e) => ({ role: (e.data as any).role, content: String((e.data as any).text ?? "").slice(0, 4000) }));
 
     // memory context: recall relevant durable facts for the latest message
     let memLine = "";
@@ -76,7 +104,8 @@ export class ChatRuntime {
       const hits = this.#opts.memory.search({ query: message, limit: 6 });
       if (hits.length) memLine = hits.map((h) => "- " + String((h as any).memory?.text ?? (h as any).text)).join("\n");
     } catch { /* memory optional */ }
-    const contextBlock = (memLine ? "CONTEXT (durable user memory):\n" + memLine + "\n\n" : "") +
+    const contextBlock = (summaryText ? "SUMMARY OF EARLIER TURNS:\n" + summaryText + "\n\n" : "") +
+      (memLine ? "CONTEXT (durable user memory):\n" + memLine + "\n\n" : "") +
       "Current time: " + new Date().toISOString();
     const messages: any[] = [
       { role: "system", content: CHAT_SYSTEM + "\n\n" + contextBlock },

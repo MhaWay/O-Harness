@@ -82,7 +82,8 @@ o-h schedule list | run <id> | disable <id> | enable <id> | remove <id>
 12. ✅ Slice 10: authz hardening + TLS - CSPRNG codes, hashed secrets, rate-limited pairing, self-signed https/wss auto mode
 13. ✅ More device tools - mobile companion offers 6 tools (calendar.list/create, notes.list/create/search, device.info) brokered with per-call approval + standing grants
 14. ✅ Scheduler - time-triggered chat messages or minion runs (every N min / daily HH:mm / once ISO), persistent across restarts, enable/disable/runNow; o-h schedule ...
-15. Next: npm publish (deferred)
+15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
+16. Next: npm publish (deferred)
 
 ## Tests
 
