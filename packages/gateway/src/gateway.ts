@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { ensureOverlay } from "./overlay.ts";
 import type { Duplex } from "node:stream";
 
 export interface GatewayConfig {
@@ -23,6 +24,10 @@ export function dataDirOf(dataDir?: string): string {
 }
 export function configFilePath(dataDir?: string): string {
   return join(dataDirOf(dataDir), "config.json");
+}
+
+export function isLoopbackHost(h: string): boolean {
+  return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]" || h === "";
 }
 
 export function loadConfig(dataDir?: string): { port: number; token: string; plugins: string[] } {
@@ -154,6 +159,13 @@ export class Gateway {
       res.end("not found");
     });
     server.on("upgrade", (req, socket, head) => this.#onUpgrade(req, socket, head));
+    // overlay bootstrap: "auto" (default) enables tailscale on non-loopback binds (headless/remote servers)
+    const wantOv = this.config.overlay ?? "auto";
+    if ((wantOv === "auto" && !isLoopbackHost(this.config.host)) || (wantOv !== "auto" && wantOv !== "off")) {
+      const kind = wantOv === "auto" ? "tailscale" : wantOv as "tailscale" | "zerotier";
+      const ov = await ensureOverlay(kind, { log: (m) => this.bus.emit("log", { source: "overlay", message: m }), authKey: this.config.overlayAuthKey, netId: this.config.overlayNetId });
+      if (ov.notes.length) this.bus.emit("log", { source: "overlay", message: ov.notes.join("; ") });
+    }
     await new Promise<void>((res, rej) => {
       server.once("error", rej);
       server.listen(this.config.port, this.config.host, () => res());
@@ -406,5 +418,6 @@ export class Gateway {
 
 export function createDefaultGateway(opts: Partial<GatewayConfig> = {}, dataDir?: string): Gateway {
   const cfg = loadConfig(dataDir);
-  return new Gateway({ ...cfg, plugins: resolvePlugins(cfg), ...opts }, dataDir);
+  const clean = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined));
+  return new Gateway({ ...cfg, plugins: resolvePlugins(cfg), ...clean } as Partial<GatewayConfig>, dataDir);
 }

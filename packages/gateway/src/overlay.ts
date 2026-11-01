@@ -32,9 +32,8 @@ function sh(cmd: string, args: string[], timeoutMs: number): { code: number; out
 }
 
 function cmdExists(cmd: string): boolean {
-  const probe = IS_WINDOWS ? sh("where", [cmd], 5000) : sh("command", ["-v", cmd], 5000);
-  if (IS_WINDOWS) return probe.code === 0;
-  return probe.code === 0 || probe.out.trim().length > 0;
+  const probe = IS_WINDOWS ? sh("where", [cmd], 5000) : sh("sh", ["-c", "command -v " + JSON.stringify(cmd)], 5000);
+  return probe.code === 0 && probe.out.trim().length > 0;
 }
 
 function log(opts: OverlayOpts, m: string) { opts.log?.("[overlay:" + currentKind + "] " + m); }

@@ -14,8 +14,9 @@ export interface NodeOpts {
   deviceId?: string;
   directPort?: number; // 0 = ephemeral; false disables via noDirect
   noDirect?: boolean;
-  /** Opt-in overlay network: bootstrap+join tailscale or zerotier (install on demand). Default off. */
-  overlay?: OverlayKind;
+  /** Overlay network: bootstrap+join tailscale or zerotier (install on demand).
+   * "auto" (default): tailscale when the gateway URL is NOT loopback (remote/headless use), off for local. */
+  overlay?: OverlayKind | "auto";
   overlayAuthKey?: string;
   overlayNetId?: string;
   log?: (m: string) => void;
@@ -44,6 +45,10 @@ async function writeFileAll(p: unknown, content: unknown) {
   await mkdir(dirname(String(p)), { recursive: true });
   await writeFile(String(p), String(content));
   return { ok: true };
+}
+
+function isLoopbackHost(h: string): boolean {
+  return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]" || h === "";
 }
 
 function handle(method: string, params: any): unknown {
@@ -162,8 +167,12 @@ export async function runNodeLoop(opts: NodeOpts): Promise<void> {
     opts.log?.("direct server on port " + direct.port);
   }
   let overlayAddresses: string[] = [];
-  if (opts.overlay && opts.overlay !== "off") {
-    const ov = await ensureOverlay(opts.overlay, { log: opts.log, authKey: opts.overlayAuthKey, netId: opts.overlayNetId });
+  const wantOverlay: OverlayKind =
+    !opts.overlay || opts.overlay === "auto"
+      ? isLoopbackHost(new URL(opts.url).hostname) ? "off" : "tailscale" // remote/headless use => tailscale default
+      : opts.overlay;
+  if (wantOverlay !== "off") {
+    const ov = await ensureOverlay(wantOverlay, { log: opts.log, authKey: opts.overlayAuthKey, netId: opts.overlayNetId });
     overlayAddresses = ov.addresses;
     if (ov.notes.length) opts.log?.(ov.notes.join("; "));
     if (!ov.started) opts.log?.("overlay enabled but not active — direct candidates without overlay");
