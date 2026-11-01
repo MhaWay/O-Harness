@@ -130,6 +130,9 @@ export class Gateway {
       settings: this.settings,
       sessions: this.sessions,
       memory: this.memory,
+      callDevice: (deviceId, method, params) => this.#callDevice(deviceId, method, params ?? {}),
+      listDeviceTools: () => this.tools.list(),
+      callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester),
       broadcast: (t, d) => this.#broadcastEvent(t, d),
     });
     this.scheduler = new SchedulerRuntime({
@@ -273,7 +276,7 @@ export class Gateway {
     this.rpc.set(Methods.ChatHistory, (p) => {
       const s = this.sessions.get(String(p?.sessionId ?? "main"));
       if (!s) return null;
-      return s.entries.filter((e) => e.kind === "chat").map((e) => ({ seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text }));
+      return s.entries.filter((e) => e.kind === "chat").map((e) => { const t = (e.data as any).tools; return { seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text, ...(t ? { tools: t } : {}) }; });
     });
 
     // scheduler: time-triggered chat messages and minion runs

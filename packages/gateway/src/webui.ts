@@ -240,8 +240,9 @@ async function loadChat(){
     const cur = sel.value;
     sel.innerHTML = ss.map(function(s){ return '<option value=' + esc(s.id) + '>' + esc(s.title) + '</option>'; }).join('');
     if (cur && [...sel.options].some(function(o){ return o.value === cur; })) sel.value = cur;
+    else if (!cur && [...sel.options].some(function(o){ return o.value === 'main'; })) sel.value = 'main';
     const h = await wsRpc('chat.history', { sessionId: (sel.value || 'main') });
-    $('chatLog').innerHTML = (h && h.length) ? h.map(function(e){ return '<b>' + esc(e.role) + '</b> ' + esc(e.text); }).join('<br>') : '(no messages yet)';
+    $('chatLog').innerHTML = (h && h.length) ? h.map(function(e){ return '<b>' + esc(e.role) + '</b> ' + esc(e.text) + (e.tools ? ' <span style="color:#8af;font-size:.8em">[used: ' + e.tools.map(esc).join(', ') + ']</span>' : ''); }).join('<br>') : '(no messages yet)';
   } catch(e){ toast(String(e), false); }
 }
 async function sendChat(){
