@@ -6,10 +6,10 @@ import type { OverlayKind } from "@o-harness/gateway";
 import { callOnce, wsUrl } from "./client.ts";
 import { hostname } from "node:os";
 
-function withoutFlag(rest: string[], name: string): string[] {
+function withoutFlag(rest: string[], ...names: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === "--" + name) { i++; continue; }
+    if (names.some((n) => rest[i] === "--" + n)) { i++; continue; }
     out.push(rest[i]!);
   }
   return out;
@@ -95,6 +95,42 @@ export async function main(args: string[]): Promise<void> {
     const r2 = await callOnce("device.fs.write", { path, content, ...(deviceId ? { deviceId } : {}) }, port);
     console.log(JSON.stringify(r2));
     return;
+  }
+
+  if (cmd === "memory") {
+    const sub = rest[0] ?? "list";
+    if (sub === "add") {
+      const text = withoutFlag(rest.slice(1), "subject", "layer", "importance", "supersedes").join(" ");
+      if (!text) throw new Error("usage: o-h memory add [--subject S] [--layer L] [--importance N] <text>");
+      const params: Record<string, unknown> = { text, provenance: "cli" };
+      const subject = flag(args, "subject"); if (subject) params.subject = subject;
+      const layer = flag(args, "layer"); if (layer) params.layer = layer;
+      const imp = flag(args, "importance"); if (imp) params.importance = Number(imp);
+      const sup = flag(args, "supersedes"); if (sup) params.supersedes = sup.split(",");
+      console.log(JSON.stringify(await callOnce("memory.add", params, port), null, 2));
+      return;
+    }
+    if (sub === "search") {
+      const query = withoutFlag(rest.slice(1), "subject", "limit", "tags").join(" ");
+      const params: Record<string, unknown> = {};
+      if (query) params.query = query;
+      const subject = flag(args, "subject"); if (subject) params.subject = subject;
+      const tags = flag(args, "tags"); if (tags) params.tags = tags.split(",");
+      const limit = flag(args, "limit"); if (limit) params.limit = Number(limit);
+      const hits = await callOnce<any[]>("memory.search", params, port);
+      if (!hits.length) console.log("(no hits)");
+      for (const h of hits) console.log(h.score.toFixed(3) + " [" + h.subject + "/" + h.layer + "] " + h.text);
+      return;
+    }
+    if (sub === "list") {
+      const subject = flag(args, "subject");
+      const validity = flag(args, "validity");
+      const params: Record<string, unknown> = { ...(subject ? { subject } : {}), ...(validity ? { validity } : {}) };
+      const list = await callOnce<any[]>("memory.list", params, port);
+      console.log(JSON.stringify(list, null, 2));
+      return;
+    }
+    throw new Error("unknown memory subcommand: " + sub);
   }
 
   if (cmd === "node") {

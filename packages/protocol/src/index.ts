@@ -23,6 +23,9 @@ export const Methods = {
   ModelsFetch: "models.fetch",
   ModelsTest: "models.test",
   SelfUpdate: "self.update",
+  MemoryAdd: "memory.add",
+  MemorySearch: "memory.search",
+  MemoryList: "memory.list",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

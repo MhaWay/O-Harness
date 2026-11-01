@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
@@ -70,6 +70,7 @@ export class Gateway {
   rpc = new RpcRouter();
   plugins = new PluginHost();
   sessions: SessionsStore;
+  memory: MemoryStore;
   settings: SettingsStore;
 
   #server: Server | null = null;
@@ -81,6 +82,7 @@ export class Gateway {
   constructor(config: Partial<GatewayConfig> = {}, dataDir?: string) {
     const base = loadConfig(dataDir);
     this.sessions = new SessionsStore(dataDirOf(dataDir));
+    this.memory = new MemoryStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.config = {
       host: config.host ?? "0.0.0.0",
@@ -152,6 +154,32 @@ export class Gateway {
       return entry;
     });
     if (!this.sessions.get("main")) this.sessions.create("main", "main");
+
+    // memory: ADD-only store, bitemporal, hybrid retrieval (see packages/core/src/memory.ts)
+    this.rpc.set(Methods.MemoryAdd, (p) => {
+      if (typeof p?.text !== "string" || !p.text.trim()) throw new Error("memory.add: text required");
+      const m = this.memory.add({
+        text: p.text,
+        subject: p.subject, tags: p.tags, entities: p.entities, layer: p.layer,
+        importance: p.importance, validFrom: p.validFrom, validUntil: p.validUntil,
+        provenance: p.provenance ?? "client",
+      }, { supersedeIds: Array.isArray(p.supersedes) ? p.supersedes.map(String) : [] });
+      this.#broadcastEvent("memory.added", { id: m.id, subject: m.subject });
+      return m;
+    });
+    this.rpc.set(Methods.MemorySearch, (p) => this.memory.search({
+      query: p?.query ? String(p.query) : undefined,
+      subject: p?.subject ? String(p.subject) : undefined,
+      tags: Array.isArray(p?.tags) ? p.tags.map(String) : undefined,
+      layer: p?.layer ? String(p.layer) : undefined,
+      validity: p?.validity === "history" ? "history" : "now",
+      limit: p?.limit ? Number(p.limit) : undefined,
+    }).map((h) => ({ ...h.memory, score: Number(h.score.toFixed(4)), signals: h.signals })));
+    this.rpc.set(Methods.MemoryList, (p) => this.memory.list({
+      subject: p?.subject ? String(p.subject) : undefined,
+      layer: p?.layer ? String(p.layer) : undefined,
+      validity: p?.validity === "history" ? "history" : "now",
+    }));
 
     // models & settings (GUI uses these; apiKey never returned by settings.get)
     this.rpc.set(Methods.SettingsGet, () => {
