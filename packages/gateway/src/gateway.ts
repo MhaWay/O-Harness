@@ -13,6 +13,7 @@ import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, t
 import { WEBUI_HTML } from "./webui.ts";
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
+import { ChatRuntime } from "./chat.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -79,6 +80,7 @@ export class Gateway {
   memory: MemoryStore;
   settings: SettingsStore;
   agents: AgentRuntime;
+  chat: ChatRuntime;
   pairing: PairingStore;
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
@@ -114,6 +116,12 @@ export class Gateway {
       callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester ?? "minion"),
       onChange: (m) => this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error }),
       storeDir: join(dataDirOf(dataDir), "minions"),
+    });
+    this.chat = new ChatRuntime({
+      settings: this.settings,
+      sessions: this.sessions,
+      memory: this.memory,
+      broadcast: (t, d) => this.#broadcastEvent(t, d),
     });
     this.config = {
       host: config.host ?? "0.0.0.0",
@@ -234,6 +242,22 @@ export class Gateway {
       return { ...m, entries: s?.entries ?? [] };
     });
     this.rpc.set(Methods.AgentsKill, (p) => ({ ok: this.agents.kill(String(p?.id)) }));
+
+    // chat: conversational interface on top of sessions (history + memory context)
+    this.rpc.set(Methods.ChatSend, async (p) => {
+      const sessionId = String(p?.sessionId ?? "main");
+      const message = typeof p?.message === "string" ? (p.message as string) : String(p?.message ?? "");
+      if (!message.trim()) throw new Error("chat.send: message required");
+      return await this.chat.chat(sessionId, message, {
+        effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
+        model: p?.model ? String(p.model) : undefined,
+      });
+    });
+    this.rpc.set(Methods.ChatHistory, (p) => {
+      const s = this.sessions.get(String(p?.sessionId ?? "main"));
+      if (!s) return null;
+      return s.entries.filter((e) => e.kind === "chat").map((e) => ({ seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text }));
+    });
 
     // models & settings (GUI uses these; apiKey never returned by settings.get)
     this.rpc.set(Methods.SettingsGet, () => {

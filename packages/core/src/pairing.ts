@@ -104,6 +104,8 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "grants.list": "read",
   "grants.revoke": "admin",
   "sessions.append": "write",
+  "chat.send": "write",
+  "chat.history": "read",
   "agents.spawn": "write",
   "agents.kill": "admin",
   "settings.save": "admin",

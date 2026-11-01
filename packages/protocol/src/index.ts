@@ -41,6 +41,8 @@ export const Methods = {
   ToolsRespond: "tools.respond",
   GrantsList: "grants.list",
   GrantsRevoke: "grants.revoke",
+  ChatSend: "chat.send",
+  ChatHistory: "chat.history",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

@@ -97,6 +97,28 @@ export async function main(args: string[]): Promise<void> {
     return;
   }
 
+  if (cmd === "say") {
+    const message = rest.filter((a) => !a.startsWith("--")).join(" ");
+    if (!message) throw new Error("usage: o-h say <message> [--session S] [--effort E]");
+    const sessionId = flag(rest, "session") ?? "main";
+    const effort = flag(rest, "effort");
+    const r = await callOnce("chat.send", { sessionId, message, effort }, port);
+    console.log(r.text);
+    return;
+  }
+  if (cmd === "chat") {
+    const sub = rest[0] ?? "history";
+    const cargs = rest.slice(1);
+    if (sub === "history") {
+      const sessionId = flag(cargs, "session") ?? "main";
+      const h = await callOnce("chat.history", { sessionId }, port);
+      if (!h) throw new Error("unknown session: " + sessionId);
+      for (const e of h) console.log(e.seq + " [" + e.role + "] " + e.text);
+      return;
+    }
+    throw new Error("unknown chat subcommand: " + sub);
+  }
+
   if (cmd === "agents" || cmd === "minions") {
     const sub = rest[0] ?? "list";
     if (sub === "spawn") {

@@ -25,6 +25,9 @@ node packages/cli/src/bin.ts minions spawn "write the deploy report" --depends-o
 # memory (temporal, ADD-only, queryable at any past instant):
 node packages/cli/src/bin.ts memory search "user prefers"
 node packages/cli/src/bin.ts memory add "user prefers dark GUI themes" --subject user
+# chat (assistant loop over sessions + memory):
+node packages/cli/src/bin.ts say 'what is the hostname?'
+node packages/cli/src/bin.ts chat history --session main
 # pairing a phone:
 node packages/cli/src/bin.ts pair create --kind mobile   # 6-digit code -> open http://<host>:<port>/m and enter it
 node packages/cli/src/bin.ts pair list | pair revoke <deviceId>
@@ -35,7 +38,7 @@ node packages/cli/src/bin.ts tools respond <ask-id> --approve [--remember]
 node packages/cli/src/bin.ts tools grants | tools revoke <deviceId> <tool>
 ```
 
-GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Minions + Pairing tabs, Models settings. Mobile companion: `/m`.
+GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assistant), Minions + Pairing tabs, Models settings. Mobile companion: `/m`.
 
 ## Concepts
 

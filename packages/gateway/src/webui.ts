@@ -55,6 +55,7 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
     <button data-tab="minions">Minions</button>
     <button data-tab="devices">Devices</button>
     <button data-tab="tools">Tools</button>
+    <button data-tab="chat">Chat</button>
     <button data-tab="settings">Settings</button>
   </nav>
   <div>
@@ -114,6 +115,14 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <div class="row"><button class="act" onclick="loadMinions()">Refresh</button><span class="dim">auto-refresh while this tab is open</span></div>
         <table><thead><tr><th>id</th><th>title</th><th>status</th><th>turns</th><th>result / error</th><th></th></tr></thead>
         <tbody id="minRows"></tbody></table>
+      </div>
+    </section>
+    <section id="tab-chat">
+      <div class="card"><h2>Chat</h2>
+        <div class="row"><select id="chatSession" onchange="loadChat()" style="flex:1"></select><button class="act" onclick="loadChat()">Reload</button></div>
+        <pre id="chatLog" style="margin-top:10px;max-height:340px;overflow:auto">loading…</pre>
+        <div class="row"><input id="chatInput" placeholder="say something to O-Harness…" style="flex:1"><button class="act" onclick="sendChat()">Send</button></div>
+        <div class="row"><span class="dim" id="chatStatus"></span></div>
       </div>
     </section>
     <section id="tab-settings">
@@ -198,6 +207,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (b.dataset.tab==='devices') { loadDevices(); loadPairing(); }
   if (b.dataset.tab==='tools') { loadTools(); if(!askTimer) askTimer=setInterval(loadTools,3000); } else if (askTimer){ clearInterval(askTimer); askTimer=null; }
   if (b.dataset.tab==='sessions') loadSessions();
+  if (b.dataset.tab==='chat') loadChat();
   if (b.dataset.tab==='minions') { loadMinions(); if(!minTimer) minTimer=setInterval(loadMinions,3000); } else if (minTimer){ clearInterval(minTimer); minTimer=null; }
   if (b.dataset.tab==='overview') loadOverview();
 });
@@ -211,6 +221,30 @@ async function loadOverview(){
   } catch(e){ $('ovDefault').textContent = String(e); }
 }
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+async function loadChat(){
+  try {
+    const ss = await wsRpc('sessions.list', {});
+    const sel = $('chatSession');
+    const cur = sel.value;
+    sel.innerHTML = ss.map(function(s){ return '<option value=' + esc(s.id) + '>' + esc(s.title) + '</option>'; }).join('');
+    if (cur && [...sel.options].some(function(o){ return o.value === cur; })) sel.value = cur;
+    const h = await wsRpc('chat.history', { sessionId: (sel.value || 'main') });
+    $('chatLog').innerHTML = (h && h.length) ? h.map(function(e){ return '<b>' + esc(e.role) + '</b> ' + esc(e.text); }).join('<br>') : '(no messages yet)';
+  } catch(e){ toast(String(e), false); }
+}
+async function sendChat(){
+  const t = $('chatInput').value.trim();
+  if (!t) return;
+  $('chatInput').value = '';
+  $('chatStatus').textContent = 'thinking…';
+  try {
+    const sel = $('chatSession');
+    await wsRpc('chat.send', { sessionId: (sel && sel.value ? sel.value : 'main'), message: t });
+    $('chatStatus').textContent = '';
+    loadChat();
+  } catch(e){ $('chatStatus').textContent = ''; toast(String(e), false); }
+}
+document.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target && e.target.id === 'chatInput') sendChat(); });
 
 async function loadPairing(){
   try { const list = await wsRpc('pairing.list',{});
