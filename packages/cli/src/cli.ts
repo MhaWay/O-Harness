@@ -169,6 +169,14 @@ export async function main(args: string[]): Promise<void> {
       console.log(JSON.stringify(list, null, 2));
       return;
     }
+    if (sub === "consolidate") {
+      const subject = flag(args, "subject");
+      const dryRun = args.includes("--dry-run");
+      const params: Record<string, unknown> = { dryRun, ...(subject ? { subject } : {}) };
+      const report = await callOnce<Record<string, unknown>>("memory.consolidate", params, port);
+      console.log(JSON.stringify(report, null, 2));
+      return;
+    }
     throw new Error("unknown memory subcommand: " + sub);
   }
 

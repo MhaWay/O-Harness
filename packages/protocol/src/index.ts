@@ -28,6 +28,7 @@ export const Methods = {
   AgentsGet: "agents.get",
   AgentsKill: "agents.kill",
   MemoryAdd: "memory.add",
+  MemoryConsolidate: "memory.consolidate",
   PairingCreate: "pairing.create",
   PairingList: "pairing.list",
   PairingRevoke: "pairing.revoke",

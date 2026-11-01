@@ -96,6 +96,7 @@ export class PairingStore {
 /** Minimal method -> scope policy map for device-originated RPC. */
 export const SCOPE_FOR_METHOD: Record<string, string> = {
   "memory.add": "write",
+  "memory.consolidate": "write",
   "sessions.append": "write",
   "agents.spawn": "write",
   "agents.kill": "admin",

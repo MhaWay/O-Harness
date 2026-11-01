@@ -12,6 +12,7 @@ import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, t
 import { WEBUI_HTML } from "./webui.ts";
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
+import { MemoryConsolidator } from "./consolidation.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileP = promisify(execFile);
@@ -78,6 +79,7 @@ export class Gateway {
   settings: SettingsStore;
   agents: AgentRuntime;
   pairing: PairingStore;
+  consolidator: MemoryConsolidator;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
@@ -92,6 +94,7 @@ export class Gateway {
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
+    this.consolidator = new MemoryConsolidator(this.memory, this.settings);
     this.agents = new AgentRuntime({
       settings: this.settings,
       sessions: this.sessions,
@@ -235,6 +238,7 @@ export class Gateway {
       this.settings.save(incoming);
       return { ok: true };
     });
+    this.rpc.set(Methods.MemoryConsolidate, (p) => this.consolidator.consolidate({ subject: p?.subject ? String(p.subject) : undefined, dryRun: Boolean(p?.dryRun) }));
     this.rpc.set(Methods.PairingCreate, (p) => {
       const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });
       this.#broadcastEvent("pairing.created", { code: c.code, expiresAt: c.expiresAt });
