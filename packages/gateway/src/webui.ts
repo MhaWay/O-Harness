@@ -79,6 +79,12 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <div id="pairOut" class="dim">no active code</div>
         <table style="margin-top:8px"><thead><tr><th>id</th><th>name</th><th>kind</th><th>scopes</th><th>last seen</th><th></th></tr></thead>
         <tbody id="pairRows"></tbody></table>
+        <div class="row" style="margin-top:12px;border-top:1px solid #333;padding-top:10px">
+          <span class="dim">This browser:</span><span id="selfPair" class="dim">not paired</span>
+          <input id="selfCode" placeholder="paste 6-digit code" style="max-width:140px" maxlength="6">
+          <button class="act" onclick="pairThisBrowser()">Pair</button>
+          <button class="ghost" onclick="forgetThisBrowser()">forget</button>
+        </div>
       </div>
     </section>
     <section id="tab-tools">
@@ -459,6 +465,27 @@ async function consMemory(){
     searchMemory($('mQuery').value.trim());
   } catch(e){ toast(String(e), false); $('memStatus').textContent = ''; }
 }
+
+async function pairThisBrowser(){
+  const code = $('selfCode').value.trim();
+  if (!/^\d{6}$/.test(code)) { toast('need a 6-digit code', false); return; }
+  try {
+    const r = await fetch('/pair', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, name: 'dashboard-browser' }) });
+    const j = await r.json();
+    if (!j.ok) { toast('pair failed: ' + (j.error || 'unknown'), false); return; }
+    localStorage.setItem('oh.secret', j.secret);
+    $('selfCode').value = '';
+    renderSelfPair();
+    toast('paired as device ' + j.deviceId);
+    loadDevices(); loadPairing();
+  } catch(e){ toast(String(e), false); }
+}
+function forgetThisBrowser(){ localStorage.removeItem('oh.secret'); renderSelfPair(); toast('secret forgotten'); }
+function renderSelfPair(){
+  const sec = localStorage.getItem('oh.secret');
+  $('selfPair').textContent = sec ? ('paired (secret stored locally, ending ...' + sec.slice(-4) + ')') : 'not paired';
+}
+renderSelfPair();
 </script>
 </body>
 </html>`;
