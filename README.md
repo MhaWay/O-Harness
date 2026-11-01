@@ -44,6 +44,13 @@ node packages/cli/src/bin.ts tools grants | tools revoke <deviceId> <tool>
 
 GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assistant), Minions + Pairing tabs, Models settings. Mobile companion: `/m`.
 
+
+```
+o-h schedule create "send a summary" --daily 09:00 --label morning   # chat job in session main
+o-h schedule create --task "backup notes" --every 60                     # minion job every hour
+o-h schedule create "one-off ping" --once 2026-12-01T08:00:00
+o-h schedule list | run <id> | disable <id> | enable <id> | remove <id>
+```
 ## Concepts
 
 - **Gateway (local mode)**: plugin host + device registry + WS API (`/api`) + node transport (`/node`), token-auth.
@@ -74,7 +81,8 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 11. ✅ Slice 9: chat interface - `o-h say` / `chat history`, GUI Chat tab, assistant loop with memory-context injection
 12. ✅ Slice 10: authz hardening + TLS - CSPRNG codes, hashed secrets, rate-limited pairing, self-signed https/wss auto mode
 13. ✅ More device tools - mobile companion offers 6 tools (calendar.list/create, notes.list/create/search, device.info) brokered with per-call approval + standing grants
-14. Next: npm publish (deferred)
+14. ✅ Scheduler - time-triggered chat messages or minion runs (every N min / daily HH:mm / once ISO), persistent across restarts, enable/disable/runNow; o-h schedule ...
+15. Next: npm publish (deferred)
 
 ## Tests
 
