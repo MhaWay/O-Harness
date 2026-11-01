@@ -64,6 +64,7 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 6. ✅ Slice 5: temporal memory layer — Mem0-style ADD-only, supersede chains, validity windows (query in the past), BM25 + recency + importance + phrase signals, RPC + CLI
 7. ✅ Slice 6: pairing + authorization — 6-digit one-time codes redeem into device secrets with scopes (`read|write|admin`), per-method scope policy, revocation, `o-h pair create|list|revoke|redeem`
 8. ✅ Slice 6-M: mobile companion page (`/m`) — pair with code, sessions, append messages, memory search/add, dispatch + watch minions; scoped access via device secret
-9. Slice 5-C: memory consolidation - model-driven clustering (Jaccard tokens) + merge/contradict resolution, supersede chains; o-h memory consolidate [--dry-run]
-10. Slice 7: mobile tool grants - devices *offer* tools (e.g. calendar); every call is brokered: standing grants (approve & always) or live per-call approval (ask -> approve/deny, owner-or-admin only); minions invoke offered tools as <deviceId>:<tool>, auto-prompting the device owner
-11. Next: npm publish, authz hardening (pairing over TLS), more device tools
+9. ✅ Slice 5-C: memory consolidation - model-driven clustering (Jaccard tokens) + merge/contradict resolution, supersede chains; o-h memory consolidate [--dry-run]
+10. ✅ Slice 7: mobile tool grants - devices *offer* tools (e.g. calendar); every call is brokered: standing grants (approve & always) or live per-call approval (ask -> approve/deny, owner-or-admin only); minions invoke offered tools as <deviceId>:<tool>, auto-prompting the device owner
+11. ✅ Slice 9: chat interface - `o-h say` / `chat history`, GUI Chat tab, assistant loop with memory-context injection
+12. Next: npm publish, authz hardening (pairing over TLS), more device tools
