@@ -25,7 +25,7 @@ node packages/cli/src/bin.ts exec --device <node-id> "uname -a"
 ## Roadmap (vertical slices)
 
 1. ✅ Slice 1: local gateway, plugin host, device registry, CLI, local device (exec/fs)
-2. ⬜ Slice 2: remote node hardening — pairing, reconnect, streaming exec
+2. ✅ Slice 2: remote sessions — persistent shared session log, main session, node auto-reconnect (backoff, stable id)
 3. ⬜ Slice 3: sessions / Minions (sub-agent sessions)
 4. ⬜ Slice 4: mobile companion (pairing, capabilities, tool grants e.g. calendar)
 5. ⬜ Slice 5: authorization/grants model per device

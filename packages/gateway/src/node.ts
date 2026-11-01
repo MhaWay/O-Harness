@@ -3,7 +3,14 @@ import { hostname, platform, arch } from "node:os";
 import WebSocket from "ws";
 import { decode, encode, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 
-export interface NodeOpts { url: string; token: string; name?: string; deviceId?: string; reconnect?: boolean }
+export interface NodeOpts {
+  url: string;
+  token: string;
+  name?: string;
+  deviceId?: string;
+  log?: (m: string) => void;
+  onConnected?: (nodeId: string) => void;
+}
 
 function runShell(command: string, cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -15,16 +22,6 @@ function runShell(command: string, cwd?: string): Promise<{ code: number; stdout
     child.on("error", rejectPromise);
     child.on("close", (code) => resolvePromise({ code: code ?? -1, stdout, stderr }));
   });
-}
-
-function handle(method: string, params: any): unknown {
-  if (method === "exec") {
-    if (typeof params?.command !== "string") throw new Error("exec: command required");
-    return runShell(params.command, params.cwd);
-  }
-  if (method === "fs.read") return readFileText(params?.path);
-  if (method === "fs.write") return writeFileAll(params?.path, params?.content);
-  throw new Error("node: unsupported method '" + method + "'");
 }
 
 async function readFileText(p: unknown) {
@@ -39,10 +36,22 @@ async function writeFileAll(p: unknown, content: unknown) {
   return { ok: true };
 }
 
+function handle(method: string, params: any): unknown {
+  if (method === "exec") {
+    if (typeof params?.command !== "string") throw new Error("exec: command required");
+    return runShell(params.command, params.cwd);
+  }
+  if (method === "fs.read") return readFileText(params?.path);
+  if (method === "fs.write") return writeFileAll(params?.path, params?.content);
+  throw new Error("node: unsupported method '" + method + "'");
+}
+
 export async function connectNode(opts: NodeOpts): Promise<{ ws: WebSocket; nodeId: string }> {
   const ws = new WebSocket(opts.url, { headers: { authorization: "Bearer " + opts.token } });
   return await new Promise((resolvePromise, rejectPromise) => {
     let settled = false;
+    const timer = setTimeout(() => { if (!settled) rejectPromise(new Error("node handshake timed out")); }, 6000);
+    const settleOk = (id: string) => { if (!settled) { settled = true; clearTimeout(timer); resolvePromise({ ws, nodeId: id }); } };
     ws.on("open", () => {
       ws.send(encode({
         type: Msg.Hello,
@@ -58,11 +67,7 @@ export async function connectNode(opts: NodeOpts): Promise<{ ws: WebSocket; node
     ws.on("message", (raw: Buffer | string) => {
       const msg = decode(String(raw));
       if (!msg) return;
-      if (msg.type === Msg.Welcome) {
-        settled = true;
-        resolvePromise({ ws, nodeId: String(msg.nodeId) });
-        return;
-      }
+      if (msg.type === Msg.Welcome) { settleOk(String(msg.nodeId)); return; }
       if (msg.type === Msg.RpcReq && typeof msg.id === "string") {
         Promise.resolve()
           .then(() => handle(String(msg.method), msg.params))
@@ -70,11 +75,38 @@ export async function connectNode(opts: NodeOpts): Promise<{ ws: WebSocket; node
           .catch((err) => ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) })));
       }
     });
-    ws.on("close", () => {
-      if (!settled && !opts.reconnect) rejectPromise(new Error("node connection closed before welcome"));
-      if (opts.reconnect) setTimeout(() => { connectNode(opts).catch(() => { /* keep trying loop */ }); }, 1000);
-    });
-    ws.on("error", (err) => { if (!settled) rejectPromise(err); });
-    setTimeout(() => { if (!settled) rejectPromise(new Error("node handshake timed out")); }, 5000);
+    ws.on("error", (e) => { if (!settled) { settled = true; clearTimeout(timer); rejectPromise(e); } });
+    ws.on("close", () => { if (!settled) { settled = true; clearTimeout(timer); rejectPromise(new Error("connection closed before welcome")); } });
   });
+}
+
+export async function runNodeLoop(opts: NodeOpts): Promise<void> {
+  let deviceId: string | undefined = opts.deviceId;
+  let attempt = 0;
+  let everConnected = false;
+  let connectedOnce = false;
+  for (;;) {
+    try {
+      const { ws, nodeId } = await connectNode({ ...opts, deviceId });
+      deviceId = nodeId;
+      opts.onConnected?.(nodeId);
+      const isReconnect = everConnected;
+      everConnected = true;
+      connectedOnce = true;
+      attempt = 0;
+      opts.log?.((isReconnect ? "reconnected as device " : "connected as device ") + nodeId);
+      await new Promise<void>((res) => {
+        if (ws.readyState !== WebSocket.OPEN) { res(); return; }
+        ws.on("close", () => res());
+      });
+      opts.log?.("disconnected, retrying");
+    } catch (e) {
+      if (!everConnected) throw e; // first-ever connection failed: surface it
+      opts.log?.("connection failed: " + (e instanceof Error ? e.message : String(e)));
+    }
+    connectedOnce = false;
+    const delay = Math.min(15_000, 500 * 2 ** Math.min(attempt, 5));
+    attempt++;
+    await new Promise((r) => setTimeout(r, delay));
+  }
 }

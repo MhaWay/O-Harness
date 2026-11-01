@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { loadConfig } from "@o-harness/gateway";
 import { createDefaultGateway } from "@o-harness/gateway";
-import { connectNode } from "@o-harness/gateway";
+import { runNodeLoop } from "@o-harness/gateway";
 import { callOnce, wsUrl } from "./client.ts";
 import { hostname } from "node:os";
 
@@ -100,14 +100,43 @@ export async function main(args: string[]): Promise<void> {
     const sub = rest[0];
     if (sub === "connect") {
       const name = flag(args, "name") ?? hostname();
-      const { nodeId } = await connectNode({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name });
-      console.log("connected as device " + nodeId + " (Ctrl-C to disconnect)");
-      process.on("SIGINT", () => process.exit(0));
-      await new Promise(() => { /* keep alive */ });
+      const deviceId = flag(args, "device-id");
+      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, log: (m: string) => console.log(m) });
       return;
     }
     throw new Error("usage: o-h node connect [--name <name>]");
   }
 
-  throw new Error("unknown command: " + cmd + "\ncommands: gateway start | token | devices | exec | read | write | node connect");
+  if (cmd === "sessions") {
+    const list = await callOnce("sessions.list", undefined, port);
+    console.log(JSON.stringify(list, null, 2));
+    return;
+  }
+
+  if (cmd === "session") {
+    const sub = rest[0];
+    const id = flag(args, "id") ?? "main";
+    if (sub === "show") {
+      const s2 = await callOnce("sessions.get", { id }, port);
+      if (!s2) throw new Error("unknown session: " + id);
+      console.log(JSON.stringify(s2, null, 2));
+      return;
+    }
+    if (sub === "create") {
+      const title = flag(args, "title") ?? rest[1] ?? "session";
+      const s2 = await callOnce("sessions.create", { title }, port);
+      console.log(JSON.stringify(s2, null, 2));
+      return;
+    }
+    if (sub === "append") {
+      const kind = flag(args, "kind") ?? "note";
+      const data = withoutFlag(rest.slice(1), "kind").join(" ") || undefined;
+      const e = await callOnce("sessions.append", { id, kind, from: (await import("node:os")).hostname(), data }, port);
+      console.log(JSON.stringify(e));
+      return;
+    }
+    throw new Error("usage: o-h session show|create|append [--id <id>] [--title t] [--kind k] [text]");
+  }
+
+  throw new Error("unknown command: " + cmd + "\ncommands: gateway start | token | devices | exec | read | write | sessions | session | node connect [--device-id id]");
 }

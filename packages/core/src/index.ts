@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+export * from "./sessions.ts";
 
 export type DeviceKind = "local" | "remote" | "mobile";
 

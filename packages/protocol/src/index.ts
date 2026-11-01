@@ -14,6 +14,10 @@ export const Methods = {
   DeviceExec: "device.exec",
   DeviceFsRead: "device.fs.read",
   DeviceFsWrite: "device.fs.write",
+  SessionsList: "sessions.list",
+  SessionsCreate: "sessions.create",
+  SessionsGet: "sessions.get",
+  SessionsAppend: "sessions.append",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

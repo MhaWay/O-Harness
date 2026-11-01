@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import type { Duplex } from "node:stream";
 
 export interface GatewayConfig {
@@ -55,6 +55,7 @@ export class Gateway {
   registry = new Registry();
   rpc = new RpcRouter();
   plugins = new PluginHost();
+  sessions: SessionsStore;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
@@ -64,6 +65,7 @@ export class Gateway {
 
   constructor(config: Partial<GatewayConfig> = {}, dataDir?: string) {
     const base = loadConfig(dataDir);
+    this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.config = {
       host: config.host ?? "127.0.0.1",
       port: config.port ?? base.port,
@@ -110,6 +112,27 @@ export class Gateway {
       this.#callDevice(p?.deviceId ?? "local", "exec", p, Number(p?.timeoutMs ?? 30_000)));
     this.rpc.set(Methods.DeviceFsRead, (p) => this.#callDevice(p?.deviceId ?? "local", "fs.read", p));
     this.rpc.set(Methods.DeviceFsWrite, (p) => this.#callDevice(p?.deviceId ?? "local", "fs.write", p));
+
+    // sessions: persistent and shared across devices — all views the same log
+    this.rpc.set(Methods.SessionsList, () => this.sessions.list());
+    this.rpc.set(Methods.SessionsCreate, (p) => {
+      const title = typeof p?.title === "string" ? p.title : "session";
+      const s = this.sessions.create(title, typeof p?.id === "string" ? p.id : undefined);
+      this.#broadcastEvent("sessions.changed", { sessionId: s.id });
+      return s;
+    });
+    this.rpc.set(Methods.SessionsGet, (p) => this.sessions.get(String(p?.id)) ?? null);
+    this.rpc.set(Methods.SessionsAppend, (p) => {
+      const entry = this.sessions.append(String(p?.id), {
+        ts: Date.now(),
+        from: String(p?.from ?? "unknown"),
+        kind: String(p?.kind ?? "note"),
+        data: p?.data,
+      });
+      this.#broadcastEvent("sessions.changed", { sessionId: String(p?.id), entry });
+      return entry;
+    });
+    if (!this.sessions.get("main")) this.sessions.create("main", "main");
 
     for (const spec of this.config.plugins) {
       const target = /^\.\//.test(spec) || spec.startsWith("/") ? pathToFileURL(resolve(process.cwd(), spec)).href : spec;
