@@ -47,7 +47,7 @@ export function resolvePlugins(cfg: { plugins: string[] }, explicit?: string[]):
   return list;
 }
 
-interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; conn?: WebSocket }
 
 export class Gateway {
   config: GatewayConfig;
@@ -240,6 +240,7 @@ export class Gateway {
       capabilities: Array.isArray(msg.capabilities) ? msg.capabilities.map(String) : [],
       conn: ws,
       meta: { hostname: typeof msg.hostname === "string" ? msg.hostname : undefined, platform: typeof msg.platform === "string" ? msg.platform : undefined },
+      addresses: Array.isArray(msg.addresses) ? msg.addresses.map(String) : [],
       connectedAt: current?.connectedAt ?? Date.now(),
       lastSeen: Date.now(),
     };
@@ -276,7 +277,11 @@ export class Gateway {
   async #callDevice(deviceId: string, method: string, params: unknown, timeoutMs = 30_000): Promise<unknown> {
     const dev = this.registry.get(deviceId);
     if (!dev) throw new Error("unknown device: " + deviceId);
-    if (dev.conn) return await this.#callRemote(dev, method, params, timeoutMs);
+    if (dev.kind === "remote" && dev.addresses?.length) {
+      const viaDirect = await this.#tryDirect(dev, method, params, timeoutMs);
+      if (viaDirect !== undefined) return viaDirect;
+    }
+    if (dev.conn) { dev.meta = { ...dev.meta, transport: "gateway" }; return await this.#callRemote(dev, method, params, timeoutMs); }
     if (dev.localHandler) return await dev.localHandler(method, params);
     throw new Error("device " + deviceId + " is not reachable");
   }
@@ -295,6 +300,99 @@ export class Gateway {
       }, timeoutMs);
       this.#pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer });
       ws.send(encode({ type: Msg.RpcReq, id, method, params }));
+    });
+  }
+
+  /** Prefer the direct (LAN/tailscale) channel when reachable; probe is cached to keep calls fast. */
+  async #tryDirect(dev: DeviceRuntime, method: string, params: unknown, timeoutMs: number): Promise<unknown | undefined> {
+    const d = dev.direct as WebSocket | undefined;
+    if (d && d.readyState === WebSocket.OPEN) {
+      try {
+        const result = await this.#wsCall(d, method, params, timeoutMs);
+        dev.meta = { ...dev.meta, transport: "direct" };
+        return result;
+      } catch (err) {
+        const message = String(err);
+        dev.meta = { ...dev.meta, transport: "gateway", directError: message };
+      }
+    } else {
+      const failAt = typeof dev.meta?.probeFailAt === "number" ? dev.meta.probeFailAt : 0;
+      if (Date.now() - failAt < 15_000) return undefined; // keep probing off, fall back to gateway channel
+      const probed = await this.#probeDirect(dev);
+      if (!probed) {
+        dev.meta = { ...dev.meta, probeFailAt: Date.now() };
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+
+  #probeDirect(dev: DeviceRuntime): Promise<WebSocket | undefined> {
+    return new Promise((res) => {
+      const addrs = dev.addresses ?? [];
+      let i = 0;
+      const next = (): void => {
+        for (;;) {
+          if (i >= addrs.length) { res(undefined); return; }
+          const url = addrs[i++]!;
+          const ws = new WebSocket(url + "?token=" + encodeURIComponent(this.config.token));
+          let done = false;
+          const giveUp = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(t);
+            try { ws.close(); } catch { /* noop */ }
+            next();
+          };
+          const t = setTimeout(giveUp, 1200);
+          ws.on("open", () => {
+            if (done) return;
+            done = true;
+            clearTimeout(t);
+            ws.on("error", () => { this.#closeDirect(dev); });
+            ws.on("close", () => { this.#closeDirect(dev); });
+            dev.direct = ws;
+            dev.meta = { ...dev.meta, transport: "direct" };
+            ws.on("message", (raw2: Buffer | string) => this.#routeDirectRes(raw2));
+            res(ws);
+          });
+          ws.on("error", giveUp);
+        }
+      };
+      next();
+    });
+  }
+
+  /** Responses arriving on a direct socket: resolve the matching pending call. */
+  #routeDirectRes(raw: Buffer | string) {
+    const msg = decode(String(raw));
+    if (!msg || msg.type !== Msg.RpcRes) return;
+    const id = String(msg.id);
+    const p = this.#pending.get(id);
+    if (!p) return;
+    this.#pending.delete(id);
+    clearTimeout(p.timer);
+    if (msg.error !== undefined) p.reject(new Error(String(msg.error)));
+    else p.resolve(msg.result);
+  }
+
+  #closeDirect(dev: DeviceRuntime) {
+    const d = dev.direct as WebSocket | undefined;
+    dev.direct = undefined;
+    if (d) { try { d.close(); } catch { /* noop */ } }
+  }
+
+  #wsCall(conn: WebSocket, method: string, params: unknown, timeoutMs: number): Promise<unknown> {
+    return new Promise((resolvePromise, rejectPromise) => {
+      if (conn.readyState !== WebSocket.OPEN) { rejectPromise(new Error("direct channel not open")); return; }
+      const id = randomUUID();
+      const timer = setTimeout(() => {
+        this.#pending.delete(id);
+        rejectPromise(new Error("direct call timed out (" + timeoutMs + "ms): " + method));
+      }, timeoutMs);
+      // reuse the pending map keyed by unique id; socket chosen by send target
+      this.#pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer, conn });
+      conn.send(encode({ type: Msg.RpcReq, id, method, params }));
     });
   }
 

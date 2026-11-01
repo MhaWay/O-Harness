@@ -9,7 +9,9 @@ export interface DeviceRuntime {
   kind: DeviceKind;
   status: "connected" | "offline";
   capabilities: string[];
-  conn?: unknown; // ws connection for remote devices
+  conn?: unknown; // ws connection to the gateway (device-initiated)
+  direct?: unknown; // ws connection gateway->device direct channel
+  addresses?: string[]; // candidate direct endpoints (LAN / tailscale)
   localHandler?: (method: string, params: any) => unknown | Promise<unknown>;
   meta?: Record<string, unknown>;
   connectedAt: number;
@@ -21,7 +23,7 @@ export type Handler = (params: any, ctx: { deviceId?: string }) => unknown | Pro
 export class Bus extends EventEmitter {}
 
 export function publicDevice(d: DeviceRuntime) {
-  const { conn, localHandler, ...rest } = d;
+  const { conn, localHandler, direct, ...rest } = d;
   return rest;
 }
 

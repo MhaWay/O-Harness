@@ -101,7 +101,9 @@ export async function main(args: string[]): Promise<void> {
     if (sub === "connect") {
       const name = flag(args, "name") ?? hostname();
       const deviceId = flag(args, "device-id");
-      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, log: (m: string) => console.log(m) });
+      const directPort = flag(args, "direct-port");
+      const noDirect = args.includes("--no-direct");
+      await runNodeLoop({ url: wsUrl(port, "/node", cfg.token), token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, log: (m: string) => console.log(m) });
       return;
     }
     throw new Error("usage: o-h node connect [--name <name>]");

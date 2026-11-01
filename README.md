@@ -13,12 +13,17 @@ node packages/cli/src/bin.ts exec "uname -a"
 node packages/cli/src/bin.ts node connect --name demo-node
 node packages/cli/src/bin.ts devices
 node packages/cli/src/bin.ts exec --device <node-id> "uname -a"
+# sessions (shared, persistent across devices):
+node packages/cli/src/bin.ts sessions
+node packages/cli/src/bin.ts session append "note from the other side"
 ```
 
 ## Concepts
 
 - **Gateway (local mode)**: plugin host + device registry + WS API (`/api`) + node transport (`/node`), token-auth.
-- **Device**: local (this machine, via plugin-local) or remote node (o-h node connect). Mobile companion planned.
+- **Device**: local (this machine, via plugin-local) or remote node (`o-h node connect`). Mobile companion planned.
+- **Direct channel**: a remote node also exposes a local WS server (`startDirectServer`). On `Hello` it advertises candidate addresses — LAN IPv4 (and ZT-like overlays, they are just LAN) + Tailscale 100.x if detected + `OH_ADDR_EXTRA` overrides. The gateway prefers the direct path (`transport: "direct"` in device meta), probing with a small timeout and a 15s fail-cache; if unreachable it transparently falls back to the gateway relay. Use `--no-direct` or `--direct-port N` (0 = ephemeral) to control.
+- **Sessions**: persistent shared logs (`sessions/<id>.json`). All devices see the *same* session; `main` is auto-created. Append from anywhere, read from anywhere.
 - **Plugins**: loaded dynamically by package name or path (`--plugins ./my-plugin.ts,pkg-name`).
 - **Protocol**: JSON-RPC-ish messages over WebSocket (see packages/protocol).
 
@@ -26,6 +31,7 @@ node packages/cli/src/bin.ts exec --device <node-id> "uname -a"
 
 1. ✅ Slice 1: local gateway, plugin host, device registry, CLI, local device (exec/fs)
 2. ✅ Slice 2: remote sessions — persistent shared session log, main session, node auto-reconnect (backoff, stable id)
-3. ⬜ Slice 3: sessions / Minions (sub-agent sessions)
-4. ⬜ Slice 4: mobile companion (pairing, capabilities, tool grants e.g. calendar)
-5. ⬜ Slice 5: authorization/grants model per device
+3. ✅ Slice 3: direct channel — LAN/Tailscale direct data-plane when reachable, gateway relay fallback, address candidates + probing
+4. ⬜ Slice 4: sessions / Minions (sub-agent sessions)
+5. ⬜ Slice 5: mobile companion (pairing, capabilities, tool grants e.g. calendar)
+6. ⬜ Slice 6: authorization/grants model per device

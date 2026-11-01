@@ -1,6 +1,9 @@
-import { spawn } from "node:child_process";
-import { hostname, platform, arch } from "node:os";
-import WebSocket from "ws";
+import { createServer } from "node:http";
+import { spawn, execSync } from "node:child_process";
+import { hostname, platform, arch, networkInterfaces } from "node:os";
+import type { AddressInfo } from "node:net";
+import type { Duplex } from "node:stream";
+import WebSocket, { WebSocketServer } from "ws";
 import { decode, encode, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 
 export interface NodeOpts {
@@ -8,6 +11,8 @@ export interface NodeOpts {
   token: string;
   name?: string;
   deviceId?: string;
+  directPort?: number; // 0 = ephemeral; false disables via noDirect
+  noDirect?: boolean;
   log?: (m: string) => void;
   onConnected?: (nodeId: string) => void;
 }
@@ -46,7 +51,67 @@ function handle(method: string, params: any): unknown {
   throw new Error("node: unsupported method '" + method + "'");
 }
 
-export async function connectNode(opts: NodeOpts): Promise<{ ws: WebSocket; nodeId: string }> {
+/** Local IPv4 addresses (LAN candidates). */
+export function lanAddresses(): string[] {
+  const out: string[] = [];
+  for (const addrs of Object.values(networkInterfaces())) {
+    for (const a of addrs ?? []) {
+      if (a.family === "IPv4" && !a.internal) out.push(a.address);
+    }
+  }
+  return [...new Set(out)];
+}
+
+/** Tailscale IPv4 if the tailscale CLI is present (integration point; headscale works too). */
+export function tailscaleAddress(): string | undefined {
+  try {
+    const ip = execSync("tailscale ip -4 2>/dev/null", { timeout: 1500 }).toString().trim().split("\n")[0];
+    return /^100\./.test(ip) ? ip : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function buildCandidates(directPort: number): string[] {
+  const extra = (process.env.OH_ADDR_EXTRA ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!Number.isFinite(directPort)) return [...new Set(extra)]; // no direct server: only explicit candidates
+  const out: string[] = [];
+  for (const ip of lanAddresses()) out.push(`ws://${ip}:${directPort}`);
+  const ts = tailscaleAddress();
+  if (ts) out.push(`ws://${ts}:${directPort}`);
+  out.push(...extra);
+  return [...new Set(out)];
+}
+
+/** Direct data-plane server: same RPC protocol, token-auth on upgrade. */
+export async function startDirectServer(port: number, token: string): Promise<{ port: number; close: () => void }> {
+  const httpServer = createServer((_req, res) => { res.writeHead(200); res.end("o-h node: direct channel ok\n"); });
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on("upgrade", (req, socket, head) => {
+    const u = new URL(req.url ?? "/", "http://x");
+    const bearer = (req.headers["authorization"] ?? "").replace(/^Bearer\s+/i, "");
+    const tok = u.searchParams.get("token") ?? bearer;
+    if (tok !== token) { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); (socket as Duplex).destroy(); return; }
+    wss.handleUpgrade(req, socket as Duplex, head, (ws) => {
+      ws.on("message", (raw: Buffer | string) => {
+        const msg = decode(String(raw));
+        if (!msg || msg.type !== Msg.RpcReq || typeof msg.id !== "string") return;
+        Promise.resolve()
+          .then(() => handle(String(msg.method), msg.params))
+          .then((result) => ws.send(encode({ type: Msg.RpcRes, id: msg.id, result })))
+          .catch((err) => ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) })));
+      });
+    });
+  });
+  return await new Promise((res) => {
+    httpServer.listen(port, "0.0.0.0", () => {
+      const addr = httpServer.address() as AddressInfo;
+      res({ port: addr.port, close: () => { wss.close(); httpServer.close(); } });
+    });
+  });
+}
+
+export async function connectNode(opts: NodeOpts & { addresses?: string[] }): Promise<{ ws: WebSocket; nodeId: string }> {
   const ws = new WebSocket(opts.url, { headers: { authorization: "Bearer " + opts.token } });
   return await new Promise((resolvePromise, rejectPromise) => {
     let settled = false;
@@ -62,6 +127,7 @@ export async function connectNode(opts: NodeOpts): Promise<{ ws: WebSocket; node
         platform: platform() + "/" + arch(),
         capabilities: ["exec", "fs.read", "fs.write"],
         deviceId: opts.deviceId,
+        addresses: opts.addresses ?? [],
       }));
     });
     ws.on("message", (raw: Buffer | string) => {
@@ -84,15 +150,19 @@ export async function runNodeLoop(opts: NodeOpts): Promise<void> {
   let deviceId: string | undefined = opts.deviceId;
   let attempt = 0;
   let everConnected = false;
-  let connectedOnce = false;
+  let direct: { port: number; close: () => void } | undefined;
+  if (!opts.noDirect) {
+    direct = await startDirectServer(opts.directPort ?? 0, opts.token);
+    opts.log?.("direct server on port " + direct.port);
+  }
+  const addresses = direct ? buildCandidates(direct.port) : buildCandidates(Infinity);
   for (;;) {
     try {
-      const { ws, nodeId } = await connectNode({ ...opts, deviceId });
+      const { ws, nodeId } = await connectNode({ ...opts, deviceId, addresses });
       deviceId = nodeId;
       opts.onConnected?.(nodeId);
       const isReconnect = everConnected;
       everConnected = true;
-      connectedOnce = true;
       attempt = 0;
       opts.log?.((isReconnect ? "reconnected as device " : "connected as device ") + nodeId);
       await new Promise<void>((res) => {
@@ -101,10 +171,9 @@ export async function runNodeLoop(opts: NodeOpts): Promise<void> {
       });
       opts.log?.("disconnected, retrying");
     } catch (e) {
-      if (!everConnected) throw e; // first-ever connection failed: surface it
+      if (!everConnected) { direct?.close(); throw e; } // first-ever connection failed: surface it
       opts.log?.("connection failed: " + (e instanceof Error ? e.message : String(e)));
     }
-    connectedOnce = false;
     const delay = Math.min(15_000, 500 * 2 ** Math.min(attempt, 5));
     attempt++;
     await new Promise((r) => setTimeout(r, delay));
