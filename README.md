@@ -31,6 +31,10 @@ node packages/cli/src/bin.ts chat history --session main
 # pairing a phone:
 node packages/cli/src/bin.ts pair create --kind mobile   # 6-digit code -> open http://<host>:<port>/m and enter it
 node packages/cli/src/bin.ts pair list | pair revoke <deviceId>
+# TLS (self-signed, auto-renewed):
+node packages/cli/src/bin.ts gateway start --tls auto   # https/wss on the same port
+node packages/cli/src/bin.ts node connect --url wss://<host>:<port>/node --insecure   # wss node (self-signed)
+
 # device-offered tools + approval:
 node packages/cli/src/bin.ts tools list | tools call --device <id> --tool calendar.list
 node packages/cli/src/bin.ts tools pending
@@ -53,6 +57,7 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 - **Sessions**: persistent shared logs (`sessions/<id>.json`). All devices see the *same* session; `main` is auto-created. Append from anywhere, read from anywhere.
 - **Plugins**: loaded dynamically by package name or path (`--plugins ./my-plugin.ts,pkg-name`).
 - **Protocol**: JSON-RPC-ish messages over WebSocket (see packages/protocol).
+- **TLS**: '--tls auto' serves https/wss with a self-signed cert auto-generated in <dataDir>/tls (825 days, renewed when <14d remain); pairing secrets are stored only as sha256 hashes, auth uses constant-time compare, /pair is rate-limited per IP (20 per 5 min).
 
 ## Roadmap (vertical slices)
 
@@ -67,4 +72,5 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 9. ✅ Slice 5-C: memory consolidation - model-driven clustering (Jaccard tokens) + merge/contradict resolution, supersede chains; o-h memory consolidate [--dry-run]
 10. ✅ Slice 7: mobile tool grants - devices *offer* tools (e.g. calendar); every call is brokered: standing grants (approve & always) or live per-call approval (ask -> approve/deny, owner-or-admin only); minions invoke offered tools as <deviceId>:<tool>, auto-prompting the device owner
 11. ✅ Slice 9: chat interface - `o-h say` / `chat history`, GUI Chat tab, assistant loop with memory-context injection
-12. Next: npm publish, authz hardening (pairing over TLS), more device tools
+12. ✅ Slice 10: authz hardening + TLS - CSPRNG codes, hashed secrets, rate-limited pairing, self-signed https/wss auto mode
+13. Next: npm publish (deferred), more device tools
