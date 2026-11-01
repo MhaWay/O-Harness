@@ -1,0 +1,256 @@
+// single-file Web UI — served at / when the gateway listens on loopback
+export const WEBUI_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O-Harness</title>
+<style>
+:root { color-scheme: dark; --bg:#0f1115; --panel:#171a21; --border:#262b36; --tx:#e6e9ef; --dim:#8a93a6; --acc:#4c8dff; --ok:#3fb950; --bad:#f56c6c; }
+* { box-sizing: border-box; }
+body { margin:0; font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--tx); }
+header { display:flex; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--panel); }
+header h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.02em; }
+header .spacer { flex:1 }
+.badge { font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--border); color:var(--dim); }
+.badge.live { color:var(--ok); border-color:var(--ok); }
+main { max-width:1060px; margin:0 auto; padding:18px; display:grid; grid-template-columns:170px 1fr; gap:18px; }
+nav { display:flex; flex-direction:column; gap:4px; }
+nav button { text-align:left; background:none; color:var(--dim); border:0; padding:8px 10px; border-radius:8px; cursor:pointer; font:inherit; }
+nav button.on { background:var(--panel); color:var(--tx); }
+section { display:none } section.on { display:block }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:14px; }
+.card h2 { margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); }
+table { width:100%; border-collapse:collapse; font-size:13px }
+th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+th { color:var(--dim); font-weight:500; }
+input,select,textarea { background:#0c0e12; color:var(--tx); border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; }
+textarea { width:100%; min-height:84px; font-family:ui-monospace,monospace; font-size:12px; }
+button.act { background:var(--acc); color:#fff; border:0; border-radius:6px; padding:7px 12px; cursor:pointer; font:inherit; }
+button.ghost { background:none; border:1px solid var(--border); color:var(--tx); border-radius:6px; padding:6px 10px; cursor:pointer; font:inherit; }
+button.danger { background:none; border:1px solid var(--bad); color:var(--bad); border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px; }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+.dim { color:var(--dim) }
+.ok { color:var(--ok) } .bad { color:var(--bad) }
+.provider { border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px }
+.provider .head { display:flex; align-items:center; gap:10px }
+.provider .head input { flex:1 }
+.hidden { display:none }
+#toast { position:fixed; bottom:16px; right:16px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 14px; display:none }
+pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10px; border-radius:8px; border:1px solid var(--border); font-size:12px }
+</style>
+</head>
+<body>
+<header>
+  <h1>O&#8209;Harness</h1>
+  <span class="badge" id="modeBadge">local</span>
+  <span class="spacer"></span>
+  <input id="tokenBox" type="password" placeholder="gateway token" style="width:200px">
+  <span class="badge live" id="connBadge">disconnected</span>
+</header>
+<main>
+  <nav>
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="sessions">Sessions</button>
+    <button data-tab="devices">Devices</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div>
+    <section id="tab-overview" class="on">
+      <div class="card"><h2>Gateway</h2><pre id="ovHealth">…</pre></div>
+      <div class="card"><h2>Models default</h2><div class="row" id="ovDefault">…</div></div>
+    </section>
+    <section id="tab-devices">
+      <div class="card"><h2>Devices</h2>
+        <div class="row"><button class="act" onclick="loadDevices()">Refresh</button></div>
+        <table><thead><tr><th>id</th><th>name</th><th>kind</th><th>status</th><th>transport</th></tr></thead>
+        <tbody id="devRows"></tbody></table>
+      </div>
+    </section>
+    <section id="tab-sessions">
+      <div class="card"><h2>Sessions</h2>
+        <div class="row">
+          <button class="act" onclick="loadSessions()">Refresh</button>
+          <input id="newTitle" placeholder="new session title">
+          <button class="ghost" onclick="createSession()">Create</button>
+        </div>
+        <select id="sessSelect" onchange="loadSessionDetail()" style="width:100%"></select>
+        <pre id="sessDetail" style="margin-top:10px">select a session…</pre>
+      </div>
+    </section>
+    <section id="tab-settings">
+      <div class="card"><h2>Models</h2>
+        <div id="providers"></div>
+        <div class="row">
+          <button class="act" onclick="openAdd()">+ Add provider</button>
+          <button class="ghost" onclick="openAdd(true)">Add custom (IP/link)</button>
+        </div>
+        <div id="addForm" class="hidden" style="border-top:1px solid var(--border); padding-top:10px; margin-top:10px">
+          <div class="row">
+            <input id="pName" placeholder="provider name">
+            <input id="pUrl" placeholder="API ip/link  e.g. http://127.0.0.1:8000/v1" style="flex:1; min-width:280px">
+            <input id="pKey" placeholder="api key (optional)" type="password" style="width:180px">
+          </div>
+          <div class="row">
+            <button class="act" onclick="fetchModels()">Fetch models</button>
+            <span id="fetchInfo" class="dim"></span>
+          </div>
+          <div class="row"><select id="fetchedSel" size="8" multiple style="flex:1; min-width:280px"></select>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="ghost" onclick="selAll()">select all</button>
+            <button class="ghost" onclick="addCustom()">+ custom model id</button>
+            <input id="customModel" placeholder="model id">
+          </div></div>
+          <div class="row"><span class="dim">Selected models:</span><span id="picked" class="dim">none</span>
+            <button class="ghost" onclick="picked.length=0;renderPicked()">clear</button></div>
+          <div class="row"><span class="dim">Extra settings (json):</span></div>
+          <textarea id="pExtra">{}</textarea>
+          <div class="row"><button class="act" onclick="saveProvider()">Save provider</button>
+          <button class="ghost" onclick="closeAdd()">cancel</button></div>
+        </div>
+        <div class="card" style="margin-top:14px"><h2>Default model</h2>
+          <div class="row">
+            <select id="defProvider" onchange="fillDefaultModels()"></select>
+            <select id="defModel"></select>
+            <select id="defEffort">
+              <option value="none">thinking: none</option><option value="low">thinking: low</option>
+              <option value="medium">thinking: medium</option><option value="xhigh">thinking: xhigh</option>
+            </select>
+            <button class="act" onclick="saveDefault()">Set default</button><button class="ghost" onclick="testDefault()">Test</button><span id="testInfo" class="dim"></span>
+          </div>
+          <div class="row"><label><input type="checkbox" id="allowUpdate" onchange="saveAllow()"> allow self-update (when valid/necessary)</label></div>
+          <div class="row"><button class="ghost" onclick="checkUpdates()">Check for updates now</button><span id="updInfo" class="dim"></span></div>
+        </div>
+      </div>
+      <div class="card"><h2>Config.json</h2>
+        <div class="row"><button class="act" onclick="loadSettingsJson()">Reload</button>
+        <span class="dim">full settings (providers, defaults, extra)</span></div>
+        <textarea id="settingsJson" style="min-height:220px"></textarea>
+        <div class="row"><button class="act" onclick="saveSettingsJson()">Save</button><span id="settingsMsg"></span></div>
+      </div>
+    </section>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+const EFF=[ 'none','low','medium','xhigh' ];
+let token = localStorage.getItem('oh.token') || new URLSearchParams(location.search).get('token') || '';
+document.getElementById('tokenBox').value = token;
+document.getElementById('tokenBox').addEventListener('change', e => { token = e.target.value.trim(); localStorage.setItem('oh.token', token); ping(); });
+let settings = null, providers = [], picked = [], editingId = null;
+const $ = (id) => document.getElementById(id);
+const toast = (msg, ok) => { const t = $('toast'); t.textContent = msg; t.style.border = '1px solid ' + (ok === false ? 'var(--bad)' : 'var(--ok)'); t.style.display='block'; setTimeout(()=>t.style.display='none', 3500); };
+
+function wsRpc(method, params) {
+  return new Promise((res, rej) => {
+    const ws = new WebSocket((location.protocol==='https:'?'wss':'ws') + '://' + location.host + '/api?token=' + encodeURIComponent(token));
+    const id = 'web-' + Math.random().toString(36).slice(2);
+    const t = setTimeout(()=>{ ws.close(); rej(new Error('rpc timeout '+method)); }, 25000);
+    ws.onopen = () => ws.send(JSON.stringify({type:'rpc:req',id,method,params}));
+    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.type==='rpc:res' && m.id===id){ clearTimeout(t); ws.close(); m.error!==undefined?rej(new Error(m.error)):res(m.result); } };
+    ws.onerror = () => { clearTimeout(t); rej(new Error('ws error — check token/gateway')); };
+  });
+}
+function ping(){ wsRpc('devices.list').then(()=>{ $('connBadge').textContent='connected'; $('connBadge').className='badge live'; return true; }).catch(e=>{ $('connBadge').textContent='disconnected'; $('connBadge').className='badge'; }); }
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); $('tab-'+b.dataset.tab).classList.add('on');
+  if (b.dataset.tab==='settings') loadSettingsTab();
+  if (b.dataset.tab==='devices') loadDevices();
+  if (b.dataset.tab==='sessions') loadSessions();
+  if (b.dataset.tab==='overview') loadOverview();
+});
+
+async function loadOverview(){
+  try { const r = await fetch('/health'); $('ovHealth').textContent = JSON.stringify(await r.json(), null, 2); } catch(e){ $('ovHealth').textContent = 'gateway unreachable'; }
+  try { const s = await wsRpc('settings.get',{}); const d = s.default && s.default.providerId;
+    if (d) { const p = s.providers.find(x=>x.id===d.providerId); const m = p && p.models.find(x=>x.id===d.modelId);
+      $('ovDefault').innerHTML = p && m ? '<b>'+esc(p.name)+' / '+esc(m.id)+'</b> &nbsp;<span class="dim">thinking: '+ (d.effort||'none') +' · '+esc(p.baseUrl)+'</span>' : '<span class="bad">default points nowhere</span>'; }
+    else $('ovDefault').innerHTML = '<span class="dim">no default set</span>';
+  } catch(e){ $('ovDefault').textContent = String(e); }
+}
+function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+
+async function loadDevices(){
+  try { const list = await wsRpc('devices.list'); $('devRows').innerHTML = list.map(d=>
+    '<tr><td>'+esc(d.id)+'</td><td>'+esc(d.name)+'</td><td>'+esc(d.kind)+'</td><td>'+esc(d.status)+'</td><td>'+esc(d.meta&&d.meta.transport)+'</td></tr>').join('');
+  } catch(e){ $('devRows').innerHTML = '<tr><td colspan="5" class="bad">'+esc(String(e))+'</td></tr>'; }
+}
+async function loadSessions(){
+  const list = await wsRpc('sessions.list');
+  $('sessSelect').innerHTML = list.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.title)+' ('+ (s.entries?s.entries.length:'?') +')</option>').join('');
+  if (list[0]) loadSessionDetail();
+}
+async function loadSessionDetail(){
+  const id = $('sessSelect').value; if (!id) return;
+  const s = await wsRpc('sessions.get', {id});
+  $('sessDetail').textContent = s.entries.map(e=>e.seq+' ['+new Date(e.ts).toISOString().slice(0,19)+'] '+e.from+' '+e.kind+': '+JSON.stringify(e.data)).join('\\n') || '(empty)';
+}
+function createSession(){ wsRpc('sessions.create',{title: $('newTitle').value||'new'}).then(()=>{ toast('created'); loadSessions(); }).catch(e=>toast(String(e),false)); }
+
+async function loadSettingsTab(){
+  settings = await wsRpc('settings.get',{});
+  providers = settings.providers || [];
+  renderProviders(); fillDefaultSelects();
+  $('allowUpdate').checked = !!settings.allowSelfUpdate;
+  $('settingsJson').value = JSON.stringify(settings, null, 2);
+}
+function renderProviders(){
+  $('providers').innerHTML = providers.map((p,i)=>
+   '<div class="provider"><div class="head"><input value="'+esc(p.name)+'" onchange="renameName('+i+',this.value)">'+
+   '<input value="'+esc(p.baseUrl)+'" onchange="renameUrl('+i+',this.value)" style="max-width:340px">'+
+   '<button class="ghost" onclick="editProvider('+i+')">edit</button>'+
+   '<button class="danger" onclick="delProvider('+i+')">remove</button></div>'+
+   '<div class="dim" style="margin-top:4px">'+p.models.length+' model(s): '+p.models.map(m=>esc(m.id)).join(', ')+'</div></div>').join('');
+}
+function renameName(i,v){ providers[i].name=v; persist(); }
+function renameUrl(i,v){ providers[i].baseUrl=v; persist(); }
+async function persist(){ try { await wsRpc('settings.save',{settings:{...settings,providers}}); toast('saved'); } catch(e){ toast(String(e),false); } }
+function delProvider(i){ const p=providers[i]; if(!confirm('remove '+p.name+'?'))return; providers.splice(i,1); settings.providers=providers; persist().then(renderProviders); }
+function editProvider(i){ openAdd(false); const p=providers[i]; editingId=p.id; $('pName').value=p.name; $('pUrl').value=p.baseUrl; $('pKey').value=p.apiKey||''; $('pExtra').value=JSON.stringify(p.extra||{},null,2); picked=p.models.map(m=>m.id); renderPicked(); $('addForm').classList.remove('hidden'); }
+function openAdd(custom){ editingId=null; $('addForm').classList.remove('hidden'); $('pName').value=custom?'custom':'My Provider'; $('pUrl').value=custom?'http://':''; $('pKey').value=''; picked=[]; renderPicked(); }
+function closeAdd(){ $('addForm').classList.add('hidden'); }
+function selAll(){ $('fetchedSel').selectedOptions.length; Array.from($('fetchedSel').options).forEach(o=>o.selected=true); collect(); }
+function collect(){ picked = [...$('fetchedSel').selectedOptions].map(o=>o.value); renderPicked(); }
+$('fetchedSel') && ($('fetchedSel').addEventListener('change', collect));
+function addCustom(){ const v=$('customModel').value.trim(); if(v){ picked.push(v); $('customModel').value=''; renderPicked(); } }
+function renderPicked(){ $('picked').textContent = picked.length? picked.join(', ') : 'none'; $('fetchedSel') && Array.from($('fetchedSel').options).forEach(o=>o.selected = picked.includes(o.value)); }
+async function fetchModels(){
+  $('fetchInfo').textContent='fetching…';
+  try { const models = await wsRpc('models.fetch',{ baseUrl:$('pUrl').value, apiKey:$('pKey').value||undefined });
+    $('fetchedSel').innerHTML = models.map(m=>'<option>'+esc(m)+'</option>').join('');
+    $('fetchInfo').textContent = models.length + ' models fetched — select/add below';
+  } catch(e){ $('fetchInfo').textContent=''; toast(String(e),false); }
+}
+async function saveProvider(){
+  const p = { id: editingId || $('pName').value.toLowerCase().replace(/[^a-z0-9]+/g,'-'),
+    name: $('pName').value, baseUrl: $('pUrl').value,
+    models: picked.map(id=>({id, reasoningEfforts: EFF})),
+    extra: tryJson($('pExtra').value) };
+  if ($('pKey').value) p.apiKey = $('pKey').value;
+  const existing = editingId ? providers.find(x=>x.id===editingId) : null;
+  if (existing) Object.assign(existing, p); else providers.push(p);
+  settings.providers = providers; await persist(); closeAdd(); renderProviders(); toast('provider saved');
+}
+function tryJson(s){ try { return JSON.parse(s||'{}'); } catch(e){ toast('extra must be valid json',false); throw e; } }
+function fillDefaultSelects(){
+  $('defProvider').innerHTML = providers.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+  fillDefaultModels();
+  if (settings.default){ const i = providers.findIndex(p=>p.id===settings.default.providerId); if(i>=0) $('defProvider').value=settings.default.providerId; fillDefaultModels();
+    $('defModel').value = settings.default.modelId; $('defEffort').value = settings.default.effort||'none'; }
+}
+function fillDefaultModels(){ const p = providers[providers.findIndex(x=>x.id===$('defProvider').value)] || providers[0];
+  $('defModel').innerHTML = (p?p.models:[]).map(m=>'<option>'+esc(m.id)+'</option>').join(''); }
+async function saveDefault(){ const providerId=$('defProvider').value, modelId=$('defModel').value, effort=$('defEffort').value;
+  await wsRpc('settings.save',{settings:{...settings, providers, default:{providerId,modelId,effort}}}); toast('default model set'); loadOverview(); }
+async function saveAllow(){ await wsRpc('settings.save',{settings:{...settings, providers, allowSelfUpdate:$('allowUpdate').checked}}); toast('saved'); }
+async function testDefault(){ $('testInfo').textContent='testing…'; try { const r = await wsRpc('models.test',{providerId:$('defProvider').value, modelId:$('defModel').value, effort:$('defEffort').value}); $('testInfo').innerHTML='<span class="ok">reply: '+esc(r.text.slice(0,80))+' · '+r.usage.total_tokens+' tok</span>'; } catch(e){ $('testInfo').innerHTML='<span class="bad">'+esc(String(e))+'</span>'; } }
+async function checkUpdates(){ $('updInfo').textContent='git pull…'; try { const r = await wsRpc('self.update',{}); $('updInfo').innerHTML='<span class="ok">'+esc(r.stdout.trim()||'done')+'</span>'; } catch(e){ $('updInfo').innerHTML='<span class="bad">'+esc(String(e))+'</span>'; } }
+function loadSettingsJson(){ $('settingsJson').value = JSON.stringify(settings, null, 2); }
+async function saveSettingsJson(){ try { settings = JSON.parse($('settingsJson').value); await wsRpc('settings.save',{settings}); providers=settings.providers||[]; renderProviders(); fillDefaultSelects(); $('settingsMsg').innerHTML='<span class="ok">saved</span>'; } catch(e){ $('settingsMsg').innerHTML='<span class="bad">'+esc(String(e))+'</span>'; } }
+
+ping(); loadOverview(); setInterval(ping, 15000);
+</script>
+</body>
+</html>`;

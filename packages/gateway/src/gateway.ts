@@ -8,6 +8,11 @@ import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import { ensureOverlay } from "./overlay.ts";
+import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
+import { WEBUI_HTML } from "./webui.ts";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileP = promisify(execFile);
 import type { Duplex } from "node:stream";
 
 export interface GatewayConfig {
@@ -15,6 +20,10 @@ export interface GatewayConfig {
   port: number;
   token: string;
   plugins: string[];
+  /** Overlay bootstrap: auto = tailscale for non-loopback (headless/remote), off on localhost. */
+  overlay?: "auto" | "off" | "tailscale" | "zerotier";
+  overlayAuthKey?: string;
+  overlayNetId?: string;
 }
 
 export const DEFAULT_PORT = 8710;
@@ -34,7 +43,7 @@ export function loadConfig(dataDir?: string): { port: number; token: string; plu
   const file = configFilePath(dataDir);
   try {
     const j = JSON.parse(readFileSync(file, "utf-8"));
-    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [] };
+    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}) };
   } catch { /* first run */ }
   const cfg = { port: DEFAULT_PORT, token: randomBytes(16).toString("hex"), plugins: [] as string[] };
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
@@ -61,6 +70,7 @@ export class Gateway {
   rpc = new RpcRouter();
   plugins = new PluginHost();
   sessions: SessionsStore;
+  settings: SettingsStore;
 
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
@@ -71,11 +81,15 @@ export class Gateway {
   constructor(config: Partial<GatewayConfig> = {}, dataDir?: string) {
     const base = loadConfig(dataDir);
     this.sessions = new SessionsStore(dataDirOf(dataDir));
+    this.settings = new SettingsStore(dataDirOf(dataDir));
     this.config = {
       host: config.host ?? "127.0.0.1",
       port: config.port ?? base.port,
       token: config.token ?? base.token,
       plugins: config.plugins ?? base.plugins,
+      ...(config.overlay ?? base.overlay ? { overlay: (config.overlay ?? base.overlay) as GatewayConfig["overlay"] } : {}),
+      ...(config.overlayAuthKey ?? base.overlayAuthKey ? { overlayAuthKey: (config.overlayAuthKey ?? base.overlayAuthKey) as string } : {}),
+      ...(config.overlayNetId ?? base.overlayNetId ? { overlayNetId: (config.overlayNetId ?? base.overlayNetId) as string } : {}),
     };
   }
 
@@ -139,6 +153,44 @@ export class Gateway {
     });
     if (!this.sessions.get("main")) this.sessions.create("main", "main");
 
+    // models & settings (GUI uses these; apiKey never returned by settings.get)
+    this.rpc.set(Methods.SettingsGet, () => {
+      const s = this.settings.get();
+      return { ...s, providers: s.providers.map((p) => ({ ...p, apiKey: p.apiKey ? "***set***" : undefined })) };
+    });
+    this.rpc.set(Methods.SettingsSave, (p) => {
+      const incoming = p?.settings as Settings | undefined;
+      if (!incoming || !Array.isArray(incoming.providers)) throw new Error("settings.save: {settings:{providers:[...]}} required");
+      const cur = this.settings.get();
+      // merge: incoming may have "***set***" masked keys — keep existing real keys
+      const byId = new Map(cur.providers.map((x) => [x.id, x]));
+      incoming.providers = incoming.providers.map((inc) => {
+        const old = byId.get(inc.id);
+        if (inc.apiKey === "***set***" && old) inc.apiKey = old.apiKey;
+        return inc;
+      });
+      this.settings.save(incoming);
+      return { ok: true };
+    });
+    this.rpc.set(Methods.ModelsFetch, (p) => fetchProviderModels(String(p?.baseUrl ?? ""), typeof p?.apiKey === "string" && p.apiKey !== "***set***" ? p.apiKey : undefined));
+    this.rpc.set(Methods.ModelsTest, async (p) => {
+      const ref = this.settings.resolveRef(String(p?.providerId ?? ""), String(p?.modelId ?? ""));
+      if (!ref) throw new Error("unknown provider/model");
+      const out = await chatOnce({
+        baseUrl: ref.provider.baseUrl, apiKey: ref.provider.apiKey, model: ref.model.id,
+        effort: (EFFORTS.includes(p?.effort) ? p.effort : "none") as Effort,
+        messages: [{ role: "user", content: "ping — reply with just OK" }],
+      });
+      return { text: String(out?.choices?.[0]?.message?.content ?? "").trim(), usage: out?.usage };
+    });
+    this.rpc.set(Methods.SelfUpdate, async () => {
+      const s = this.settings.get();
+      if (!s.allowSelfUpdate) throw new Error("self-update disabled (settings.allowSelfUpdate=false)");
+      const dir = s.repoDir ?? process.cwd();
+      const { stdout, stderr } = await execFileP("git", ["-C", dir, "pull", "--ff-only"], { timeout: 30_000 });
+      return { dir, stdout: stdout.slice(0, 2000), stderr: stderr.slice(0, 800) };
+    });
+
     for (const spec of this.config.plugins) {
       const target = /^\.\//.test(spec) || spec.startsWith("/") ? pathToFileURL(resolve(process.cwd(), spec)).href : spec;
       const mod = (await import(target)) as { default?: OHarnessPlugin; plugin?: OHarnessPlugin };
@@ -150,6 +202,11 @@ export class Gateway {
 
     const server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "local"));
+      if (url.pathname === "/" || url.pathname === "/index.html") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(WEBUI_HTML);
+        return;
+      }
       if (url.pathname === "/health") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(encode({ ok: true, mode: "local", protocol: PROTOCOL_VERSION, port: this.config.port }));

@@ -18,6 +18,11 @@ export const Methods = {
   SessionsCreate: "sessions.create",
   SessionsGet: "sessions.get",
   SessionsAppend: "sessions.append",
+  SettingsGet: "settings.get",
+  SettingsSave: "settings.save",
+  ModelsFetch: "models.fetch",
+  ModelsTest: "models.test",
+  SelfUpdate: "self.update",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };
