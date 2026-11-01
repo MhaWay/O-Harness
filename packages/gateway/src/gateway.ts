@@ -196,7 +196,7 @@ export class Gateway {
     this.rpc.set(Methods.DeviceFsWrite, (p) => this.#callDevice(p?.deviceId ?? "local", "fs.write", p));
 
     // sessions: persistent and shared across devices — all views the same log
-    this.rpc.set(Methods.SessionsList, () => this.sessions.list().map((s) => { const full = this.sessions.get(String(s.id)); return { ...s, chat: (full?.entries.some((e) => e.kind === "chat") ?? false) }; }));
+    this.rpc.set(Methods.SessionsList, () => this.sessions.list().map((s) => { const full = this.sessions.get(String(s.id)); return { ...s, entryCount: full ? full.entries.length : 0, chat: (full?.entries.some((e) => e.kind === "chat") ?? false) }; }));
     this.rpc.set(Methods.SessionsCreate, (p) => {
       const title = typeof p?.title === "string" ? p.title : "session";
       const s = this.sessions.create(title, typeof p?.id === "string" ? p.id : undefined);

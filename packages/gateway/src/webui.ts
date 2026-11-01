@@ -127,7 +127,7 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
     </section>
     <section id="tab-chat">
       <div class="card"><h2>Chat</h2>
-        <div class="row"><select id="chatSession" onchange="loadChat()" style="flex:1"></select><button class="act" onclick="loadChat()">Reload</button></div>
+        <div class="row"><select id="chatSession" onchange="loadChat()" style="flex:1"></select><button class="act" onclick="newChatSession()">New</button><button class="act" onclick="loadChat()">Reload</button></div>
         <pre id="chatLog" style="margin-top:10px;max-height:340px;overflow:auto">loading…</pre>
         <div class="row"><input id="chatInput" placeholder="say something to O-Harness…" style="flex:1"><button class="act" onclick="sendChat()">Send</button></div>
         <div class="row"><span class="dim" id="chatStatus"></span></div>
@@ -259,7 +259,7 @@ async function loadChat(){
     const ss = await wsRpc('sessions.list', {});
     let minionIds = new Set();
     try { const ag = await wsRpc('agents.list', {}); (ag.minions || ag || []).forEach(function(m){ minionIds.add(m.id); if (m.sessionId) minionIds.add(m.sessionId); }); } catch(e){}
-    const shown = ss.filter(function(s){ if (minionIds.has(s.id)) return false; return s.id === 'main' || s.chat === true || s.chat === undefined; });
+    const shown = ss.filter(function(s){ if (minionIds.has(s.id)) return false; return s.id === 'main' || s.chat === true || s.entryCount === 0 || s.chat === undefined; });
     const sel = $('chatSession');
     const cur = sel.value;
     sel.innerHTML = shown.map(function(s){ return '<option value=' + esc(s.id) + '>' + esc(s.title) + '</option>'; }).join('');
@@ -309,6 +309,14 @@ function sendChat(){
     else if (m.type==='rpc:res' && m.id===id) { done(m.error!==undefined ? new Error(m.error) : null); }
   };
   ws.onerror = () => done(new Error('ws error'));
+}
+async function newChatSession(){
+  const title = prompt('Session title:', 'new session');
+  if (title === null) return;
+  try {
+    const s = await wsRpc('sessions.create', { title: title || 'session' });
+    loadChat().then(function(){ var sel = $('chatSession'); if (s && s.id && [...sel.options].some(function(o){return o.value===s.id;})) sel.value = s.id; loadChat(); });
+  } catch(e){ toast(String(e), false); }
 }
 document.addEventListener('keydown', function(e){ if (e.key === 'Enter' && e.target && e.target.id === 'chatInput') sendChat(); });
 
