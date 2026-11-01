@@ -56,7 +56,8 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
     <button data-tab="devices">Devices</button>
     <button data-tab="tools">Tools</button>
     <button data-tab="chat">Chat</button>
-    <button data-tab="settings">Settings</button>
+    <button data-tab="sched">Scheduler</button>
+<button data-tab="settings">Settings</button>
   </nav>
   <div>
     <section id="tab-overview" class="on">
@@ -123,6 +124,16 @@ pre { white-space:pre-wrap; word-break:break-all; background:#0c0e12; padding:10
         <pre id="chatLog" style="margin-top:10px;max-height:340px;overflow:auto">loading…</pre>
         <div class="row"><input id="chatInput" placeholder="say something to O-Harness…" style="flex:1"><button class="act" onclick="sendChat()">Send</button></div>
         <div class="row"><span class="dim" id="chatStatus"></span></div>
+      </div>
+    </section>
+    <section id="tab-sched">
+      <div class="card"><h2>Scheduled jobs</h2>
+        <div class="row"><input id="sLabel" placeholder="label" style="width:160px">
+        <input id="sMsg" placeholder="message (empty = minion task field below)" style="flex:1;min-width:220px"><input id="sTask" placeholder="minion task (if message empty)" style="flex:1;min-width:220px"></div>
+        <div class="row"><select id="sCad" onchange="showCad()"><option value="every">every (min)</option><option value="daily">daily (HH:mm)</option><option value="once">once (ISO)</option></select>
+        <input id="sEvery" type="number" value="60" style="width:90px"><input id="sDaily" placeholder="09:00" class="hidden"><input id="sOnce" placeholder="2026-12-01T08:00" class="hidden" style="flex:1"></div>
+        <div class="row"><button class="act" onclick="addSched()">+ Schedule job</button><button class="ghost" onclick="loadSched()">Reload</button><span class="dim" id="schedStatus"></span></div>
+        <table class="t"><thead><tr><th>id</th><th>next</th><th>kind</th><th>label</th><th>last</th><th></th></tr></thead><tbody id="schedRows"><tr><td colspan="6" class="dim">loading…</td></tr></tbody></table>
       </div>
     </section>
     <section id="tab-settings">
@@ -208,6 +219,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   if (b.dataset.tab==='tools') { loadTools(); if(!askTimer) askTimer=setInterval(loadTools,3000); } else if (askTimer){ clearInterval(askTimer); askTimer=null; }
   if (b.dataset.tab==='sessions') loadSessions();
   if (b.dataset.tab==='chat') loadChat();
+  if (b.dataset.tab==='sched') loadSched();
   if (b.dataset.tab==='minions') { loadMinions(); if(!minTimer) minTimer=setInterval(loadMinions,3000); } else if (minTimer){ clearInterval(minTimer); minTimer=null; }
   if (b.dataset.tab==='overview') loadOverview();
 });
@@ -391,6 +403,12 @@ document.addEventListener('click', (ev) => {
   else if (act === 'revgrant') { const dt = t.getAttribute('data-tool'); wsRpc('grants.revoke',{deviceId:id, tool:dt}).then(()=>{toast('grant revoked');loadTools();}).catch(e=>toast(String(e),false)); }
 });
 ping(); loadOverview(); setInterval(ping, 15000);
+function showCad(){ for (const id of ['sEvery','sDaily','sOnce']) $(id).classList.add('hidden'); const v=$('sCad').value; if(v==='every') $('sEvery').classList.remove('hidden'); else if(v==='daily') $('sDaily').classList.remove('hidden'); else $('sOnce').classList.remove('hidden'); }
+async function loadSched(){ try{ const rows = await wsRpc('schedule.list'); $('schedRows').innerHTML = rows.map(j => '<tr><td>'+esc(j.id)+'</td><td>'+(j.disabled?'<span class=dim>disabled</span>':new Date(j.nextRunAt).toLocaleString())+'</td><td>'+esc(j.kind)+'</td><td>'+esc(j.label||'')+'</td><td class=dim>'+esc(String(j.lastResult||'').slice(0,50))+'</td><td><button class=ghost data-act=schedrun data-id='+esc(j.id)+'>run</button> <button class=ghost data-act=schedtoggle data-id='+esc(j.id)+' data-d='+(j.disabled?'0':'1')+'>'+(j.disabled?'enable':'disable')+'</button> <button class=ghost data-act=schedrm data-id='+esc(j.id)+'>rm</button></td></tr>').join('') || '<tr><td colspan=6 class=dim>no jobs</td></tr>'; } catch(e){ $('schedRows').innerHTML='<tr><td colspan=6 class=dim>'+esc(String(e.message||e))+'</td></tr>'; } }
+async function addSched(){ const label=$('sLabel').value.trim(); const message=$('sMsg').value.trim(); const task=$('sTask').value.trim(); const cad=$('sCad').value; let cadence=null;
+  if(cad==='every') cadence={type:'every',minutes:Number($('sEvery').value)}; else if(cad==='daily') cadence={type:'daily',time:$('sDaily').value.trim()||'09:00'}; else { const t=Date.parse($('sOnce').value); if(!t){ $('schedStatus').textContent='bad date'; return; } cadence={type:'once',at:new Date(t).toISOString()}; }
+  try { await wsRpc('schedule.create',{label:label||undefined,message:message||undefined,task:task||undefined,cadence}); $('schedStatus').textContent='scheduled'; loadSched(); } catch(e){ $('schedStatus').textContent='error: '+e.message; } }
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if(!b) return; const act=b.dataset.act, id=b.dataset.id; if(act==='schedrun'){ wsRpc('schedule.runNow',{id}).then(loadSched); } else if(act==='schedtoggle'){ wsRpc('schedule.setDisabled',{id,disabled:b.dataset.d==='1'}).then(loadSched); } else if(act==='schedrm'){ wsRpc('schedule.remove',{id}).then(loadSched); } });
 </script>
 </body>
 </html>`;
