@@ -52,6 +52,29 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("unknown gateway subcommand: " + sub);
   }
 
+  if (cmd === "help" || cmd === "--help" || cmd === "-h") {
+    console.log([
+      "O-Harness — personal agent gateway. Global flag: --port <p> (default from ~/.o-harness/config.json).",
+      "",
+      "gateway start [--port p] [--host h] [--tls auto|off]   start gateway (GUI http://host:port/, mobile /m)",
+      "token                                              print admin token",
+      "devices                                             list connected devices (+transport)",
+      "exec [--device id] <command>                        run command on a device (local default)",
+      "read [--device id] <path>                         read a file from a device",
+      "write [--device id] <path> [file]                   write a file (or upload file contents)",
+      "say <message> [--session s] [--effort e]            chat with the assistant (tool loop + memory)",
+      "chat history [--session s]                          show chat history",
+      "schedule create|list|run|enable|disable|rm          time triggers (every N min / daily HH:mm / once)",
+      "minions spawn|list|show|kill                        dispatch agent tasks (--depends-on a,b chains)",
+      "memory add|search|list|consolidate                  durable temporal memory",
+      "pair create|list|revoke|redeem                      pairing codes + device secrets with scopes",
+      "tools list|call|pending|respond / grants            device-offered tools + approvals",
+      "sessions list / session show|create|append          session logs",
+      "node connect [--url wss://..] [--insecure]          run a node that connects to a gateway",
+    ].join("\n"));
+    return;
+  }
+
   if (cmd === "token") {
     console.log(cfg.token);
     return;
