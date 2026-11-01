@@ -42,7 +42,7 @@ node packages/cli/src/bin.ts tools respond <ask-id> --approve [--remember]
 node packages/cli/src/bin.ts tools grants | tools revoke <deviceId> <tool>
 ```
 
-GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assistant), Minions + Pairing tabs, Models settings. Mobile companion: `/m`.
+GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assistant, live token streaming), Scheduler, Memory, Minions + Pairing + Tools tabs, Models settings. Mobile companion: `/m`.
 
 
 ```
