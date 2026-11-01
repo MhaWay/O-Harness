@@ -73,7 +73,8 @@ GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assis
 10. ✅ Slice 7: mobile tool grants - devices *offer* tools (e.g. calendar); every call is brokered: standing grants (approve & always) or live per-call approval (ask -> approve/deny, owner-or-admin only); minions invoke offered tools as <deviceId>:<tool>, auto-prompting the device owner
 11. ✅ Slice 9: chat interface - `o-h say` / `chat history`, GUI Chat tab, assistant loop with memory-context injection
 12. ✅ Slice 10: authz hardening + TLS - CSPRNG codes, hashed secrets, rate-limited pairing, self-signed https/wss auto mode
-13. Next: npm publish (deferred), more device tools
+13. ✅ More device tools - mobile companion offers 6 tools (calendar.list/create, notes.list/create/search, device.info) brokered with per-call approval + standing grants
+14. Next: npm publish (deferred)
 
 ## Tests
 
