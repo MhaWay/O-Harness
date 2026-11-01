@@ -41,7 +41,7 @@ export async function main(args: string[]): Promise<void> {
     const sub = rest[0] ?? "start";
     if (sub === "start") {
       const pluginsArg = flag(args, "plugins")?.split(",").filter(Boolean);
-      const host = flag(args, "host") ?? "127.0.0.1";
+      const host = flag(args, "host") ?? "0.0.0.0";
       const gw = createDefaultGateway({ port, host, ...(pluginsArg ? { plugins: pluginsArg } : {}) });
       await gw.start();
       console.log("gateway (local) running: ws://127.0.0.1:" + port);

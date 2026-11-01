@@ -83,7 +83,7 @@ export class Gateway {
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.config = {
-      host: config.host ?? "127.0.0.1",
+      host: config.host ?? "0.0.0.0",
       port: config.port ?? base.port,
       token: config.token ?? base.token,
       plugins: config.plugins ?? base.plugins,
