@@ -66,6 +66,14 @@ o-h schedule list | run <id> | disable <id> | enable <id> | remove <id>
 - **Protocol**: JSON-RPC-ish messages over WebSocket (see packages/protocol).
 - **TLS**: '--tls auto' serves https/wss with a self-signed cert auto-generated in <dataDir>/tls (825 days, renewed when <14d remain); pairing secrets are stored only as sha256 hashes, auth uses constant-time compare, /pair is rate-limited per IP (20 per 5 min).
 
+## New UI (static assets)
+
+The gateway serves a chat-first web app at / from packages/gateway/src/ui/
+(index.html, style.css, client.js, app.js - plain JS, no build step).
+Chat is home; the sidebar carries sessions, minions, scheduler, memory, tools,
+devices and settings, plus a Ctrl+K command palette. A hamburger opens the
+sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
+
 ## Roadmap (vertical slices)
 
 1. ✅ Slice 1: local gateway, plugin host, device registry, CLI, local device (exec/fs)
@@ -84,6 +92,7 @@ o-h schedule list | run <id> | disable <id> | enable <id> | remove <id>
 14. ✅ Scheduler - time-triggered chat messages or minion runs (every N min / daily HH:mm / once ISO), persistent across restarts, enable/disable/runNow; o-h schedule ...
 15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
 16. Next: npm publish (deferred)
+17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
 
 ## Tests
 
