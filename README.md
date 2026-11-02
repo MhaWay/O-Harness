@@ -104,6 +104,7 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
 19. ✅ Error tracking & logs: structured LogStore (ring + daily JSONL), logs.tail/stats/resolve RPC+CLI, GUI Logs view with model-assisted analysis
 20. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
+21. ✅ Monitoring & alerts: service probes (models/http/ws) + fired/resolved alerts with ack, Overview panel (services table + open alerts + Re-check now), `o-h monitor ...`
 18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
 
 
@@ -113,6 +114,19 @@ daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
 The GUI Logs view has search, level filter, 24h stats and an “Ask model to analyze” button.
 
+### Monitoring & alerts
+O-Harness probes every configured service (model providers are auto-registered, plus any you add):
+`models` endpoints check `/v1/models`, `http` any GET, `ws` a handshake. A failed check fires an
+alert immediately (deduplicated while open); the first success after down marks it resolved.
+The Overview shows live status and open alerts (ack button + Re-check now).
+
+```bash
+o-h monitor status                       # services UP/DOWN + open alerts
+o-h monitor check                        # run all probes now
+o-h monitor add --name gpu-box --kind ws --url ws://10.0.0.5:8710/node
+o-h monitor alerts                       # history
+o-h monitor ack <alert-id>               # acknowledge
+```
 ### Voice (dictation + text-to-speech)
 O-Harness integrates local speech models through an HTTP adapter (LFM3 batch API exposed on port 8023:
 `POST /tts_to_audio {text}` -> 24kHz PCM16 WAV, `POST /asr {audio_b64|audio_path, language}` -> text).

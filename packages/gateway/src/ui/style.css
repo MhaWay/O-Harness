@@ -48,6 +48,7 @@ main{display:flex;flex-direction:column;min-width:0}
 .md pre code{border:0;padding:0;background:none}
 .md a{color:var(--acc)}
 .md h1,.md h2,.md h3{margin:10px 0 6px;font-size:15px}
+.alertrow { padding: 8px 10px; margin: 6px 0; background: rgba(231,76,60,.12); border-left: 3px solid #e74c3c; border-radius: 6px; }
 .dim{color:var(--dim)}
 .thinking{display:inline-flex;gap:4px}
 .thinking i{width:6px;height:6px;border-radius:50%;background:var(--dim);animation:bl 1s infinite}

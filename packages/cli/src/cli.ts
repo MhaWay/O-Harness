@@ -388,6 +388,31 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("unknown voice subcommand: " + sub + " (get|save|say|asr|probe)");
   }
 
+  if (cmd === "monitor" || cmd === "mon") {
+    const sub = rest[0] ?? "status";
+    const vargs = rest.slice(1);
+    if (sub === "status") {
+      const r = await callOnce("monitor.status", undefined, port) as any;
+      console.log("last check: " + (r.lastCheckAt ? new Date(r.lastCheckAt).toLocaleString() : "never"));
+      for (const st of r.statuses) console.log((st.ok ? "UP  " : "DOWN") + " " + st.name.padEnd(24) + " " + st.kind.padEnd(7) + " " + st.url + "  (" + (st.latencyMs ?? "-") + "ms, fails=" + st.consecutiveFails + ")");
+      if (!r.statuses.length) console.log("(no services defined - add with: monitor add --name X --kind http --url https://...)" );
+      console.log("open alerts: " + r.openAlerts);
+      return;
+    }
+    if (sub === "check") { const r = await callOnce("monitor.check", undefined, port) as any; console.log(JSON.stringify(r, null, 2)); return; }
+    if (sub === "add") {
+      const name = flag(vargs, "name") ?? "service"; const kind = flag(vargs, "kind") ?? "http"; const url = flag(vargs, "url") ?? vargs[0];
+      if (!url) throw new Error("monitor add needs --url");
+      const r = await callOnce("monitor.add", { name, kind, url }, port) as any;
+      console.log(JSON.stringify(r, null, 2)); return;
+    }
+    if (sub === "remove") { const r = await callOnce("monitor.remove", { id: vargs[0] }, port) as any; console.log(JSON.stringify(r)); return; }
+    if (sub === "enable") { const r = await callOnce("monitor.enable", { id: vargs[0], enabled: flag(vargs, "disable") ? false : true }, port) as any; console.log(JSON.stringify(r)); return; }
+    if (sub === "alerts") { const r = await callOnce("alerts.list", undefined, port) as any; for (const a of r) console.log(new Date(a.at).toLocaleString() + " " + (a.state === "firing" ? "🔥" : "✅") + " " + a.name + " · " + a.detail + (a.acked ? " (acked)" : "")); return; }
+    if (sub === "ack") { const r = await callOnce("alerts.ack", { id: vargs[0] }, port) as any; console.log(JSON.stringify(r)); return; }
+    throw new Error("unknown monitor subcommand: " + sub + " (status|check|add|remove|enable|alerts|ack)");
+  }
+
   if (cmd === "logs") {
     const sub = rest[0];
     if (sub === "tail" || sub === undefined) {

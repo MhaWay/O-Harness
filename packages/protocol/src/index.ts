@@ -66,6 +66,13 @@ export const Methods = {
   VoiceSpeak: "voice.speak",
   VoiceAsr: "voice.asr",
   VoiceProbe: "voice.probe",
+  MonitorStatus: "monitor.status",
+  MonitorCheck: "monitor.check",
+  MonitorAdd: "monitor.add",
+  MonitorRemove: "monitor.remove",
+  MonitorEnable: "monitor.enable",
+  AlertList: "alerts.list",
+  AlertAck: "alerts.ack",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

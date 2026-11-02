@@ -288,6 +288,16 @@ function showView(name) {
         card("Schedule", jobs.length ? humanCadence(nextJob) : "no jobs", nextJob ? "next " + fmtDT(nextJob.nextRunAt) : "scheduler", "scheduler") +
         "</div>" +
         '<h2 class="sec">Recent activity</h2><div id="ovRecent"></div>';
+      var mon = await rpc("monitor.status", {});
+      var alerts = (await rpc("alerts.list", {})).filter(function (a) { return a.state === "firing" });
+      var fireHtml = alerts.filter(function (a) { return !a.acked }).map(function (a) { return "<div class='alertrow'>🔥 <b>" + esc(a.name) + "</b> down — " + esc(a.detail) + " <span class='dim'>" + fmtAgo(a.at) + "</span> <button class='ghost' data-ack='" + esc(a.id) + "'>ack</button></div>" }).join("") || "<div class='dim'>no open alerts</div>";
+      var svcRows = (mon.statuses || []).map(function (s) { return "<tr><td>" + (s.ok ? "🟢" : "🔴") + "</td><td>" + esc(s.name) + "</td><td class='dim'>" + esc(s.kind) + " · " + esc(s.url) + "</td><td>" + (s.latencyMs != null ? s.latencyMs + "ms" : "-") + "</td><td>" + (s.consecutiveFails > 1 ? s.consecutiveFails + " fails" : "ok") + "</td></tr>" }).join("") || "<tr><td colspan='5' class='dim'>no services probed yet</td></tr>";
+      host.innerHTML +=
+        "<h2 class='sec'>Alerts</h2>" + fireHtml +
+        "<h2 class='sec'>Services" + (mon.lastCheckAt ? " <span class='dim' style='font-size:12px'>checked " + fmtAgo(mon.lastCheckAt) + "</span>" : "") + "</h2>" +
+        "<table><tbody>" + svcRows + "</tbody></table>" +
+        "<div class='row' style='margin-top:8px'><button class='ghost' id='monNow'>Re-check now</button></div>";
+      $("#monNow").onclick = async function () { $("#monNow").disabled = true; try { await rpc("monitor.check", {}); loadOverview() } finally { $("#monNow").disabled = false } };
       $("#ovRecent").innerHTML = recentRows();
     } catch (e) { host.innerHTML = '<div class="empty">error: ' + esc(String(e)) + "</div>" }
   }
@@ -800,7 +810,7 @@ function showView(name) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette() }
     });
     document.addEventListener("click", function (e) {
-      var el = e.target.closest ? e.target.closest("[data-openview],[data-open],[data-openchat],[data-mshow],[data-mkill],[data-jrun],[data-jdis],[data-jdel],[data-tyes],[data-trem],[data-tno],[data-grev],[data-prev]") : null;
+      var el = e.target.closest ? e.target.closest("[data-openview],[data-open],[data-openchat],[data-mshow],[data-mkill],[data-jrun],[data-jdis],[data-jdel],[data-tyes],[data-trem],[data-tno],[data-grev],[data-prev],[data-ack]") : null;
       if (!el) return;
       var d = el.dataset;
       if (d.openview) showView(d.openview);
@@ -816,6 +826,7 @@ function showView(name) {
       else if (d.tno) toolRespond(d.tno, false, false);
       else if (d.grev) { var parts = d.grev.split("|"); rpc("grants.revoke", { deviceId: parts[0], tool: parts[1] }).then(function () { toast("revoked"); loadTools() }, function (e2) { toast(String(e2), "err") }) }
       else if (d.prev) rpc("pairing.revoke", { id: d.prev }).then(function () { toast("revoked"); loadDevices() });
+      else if (d.ack) rpc("alerts.ack", { id: d.ack }).then(function () { toast("alert acked"); loadOverview() });
     });
     async function toolRespond(id, approved, remember) {
       try { await rpc("tools.respond", { id: id, approved: approved, remember: remember }); toast(approved ? "approved" : "denied"); loadTools() } catch (e) { toast(String(e), "err") }

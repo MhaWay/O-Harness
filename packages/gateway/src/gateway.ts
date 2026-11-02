@@ -21,6 +21,7 @@ import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
 import { VoiceStore, voiceTts, voiceAsr, voiceProbe, type VoiceConfig } from "./voice.ts";
+import { MonitorStore } from "./monitor.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { resolveTls } from "./tls.ts";
 import { execFile } from "node:child_process";
@@ -97,6 +98,8 @@ export class Gateway {
   pairing: PairingStore;
   auth: AuthStore;
   voice: VoiceStore;
+  monitor: MonitorStore;
+  #monitorTimer: ReturnType<typeof setInterval> | null = null;
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
   tools: ToolBroker;
@@ -122,6 +125,7 @@ export class Gateway {
     this.log = new LogStore(join(dataDirOf(dataDir), "logs"));
     this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
     this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
+    this.monitor = new MonitorStore(join(dataDirOf(dataDir), "monitor"));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.consolidator = new MemoryConsolidator(this.memory, this.settings);
     this.grants = new GrantsStore(dataDirOf(dataDir));
@@ -200,6 +204,9 @@ export class Gateway {
   async start() {
     this.agents.load();
     this.scheduler.start();
+    this.#seedMonitorServices();
+    this.#monitorTimer = setInterval(() => { void this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log).catch(() => { /* probe errors are logged inside */ }) }, 30_000);
+    void this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log).catch(() => { /* noop */ });
 
     this.rpc.set(Methods.DevicesList, () => this.registry.listPublic());
     this.rpc.set(Methods.DeviceInfo, (p) => {
@@ -415,6 +422,13 @@ export class Gateway {
       return { text };
     });
     this.rpc.set(Methods.VoiceProbe, () => voiceProbe(this.voice.get()));
+    this.rpc.set(Methods.MonitorStatus, () => ({ services: this.monitor.services, statuses: this.monitor.lastStatus, lastCheckAt: this.monitor.lastCheckAt, openAlerts: this.monitor.alerts.filter((a) => a.state === "firing" && !a.acked).length, alerts: this.monitor.alerts.slice(0, 30) }));
+    this.rpc.set(Methods.MonitorCheck, async () => await this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log));
+    this.rpc.set(Methods.MonitorAdd, (p) => this.monitor.addService(String(p?.name ?? "service"), (String(p?.kind ?? "http") as "http" | "ws" | "models"), String(p?.url ?? "")));
+    this.rpc.set(Methods.MonitorRemove, (p) => ({ removed: this.monitor.removeService(String(p?.id ?? "")) }));
+    this.rpc.set(Methods.MonitorEnable, (p) => ({ enabled: this.monitor.setEnabled(String(p?.id ?? ""), Boolean(p?.enabled)) }));
+    this.rpc.set(Methods.AlertList, () => this.monitor.alerts.slice(0, 50));
+    this.rpc.set(Methods.AlertAck, (p) => ({ acked: this.monitor.ackAlert(String(p?.id ?? "")) }));
     // --- device-offered tools + authorization grants ---
     this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {
       const deviceId = ctx.deviceId ?? "local"; // registered device socket; admin callers pass deviceId param
@@ -649,7 +663,19 @@ export class Gateway {
     this.#server = server;
   }
 
+    /** Seed sensible probes once: each models provider + batch voice endpoint. */
+  #seedMonitorServices(): void {
+    if (this.monitor.services.length) return;
+    for (const p of this.settings.get().providers) {
+      this.monitor.addService(p.name || p.id, "models", p.baseUrl);
+    }
+    const v = this.voice.get();
+    if (v?.tts?.url) this.monitor.addService("Voice batch (LFM3)", "http", v.tts.url + "/health");
+    this.monitor.save();
+  }
+
   async stop() {
+    if (this.#monitorTimer) { clearInterval(this.#monitorTimer); this.#monitorTimer = null; }
     await this.plugins.teardownAll();
     for (const d of this.registry.all()) { if (d.conn) { try { (d.conn as WebSocket).close(); } catch { /* noop */ } } }
     for (const ws of [...this.#clientSockets]) { try { ws.close(); } catch { /* noop */ } }
