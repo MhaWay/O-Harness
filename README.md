@@ -111,7 +111,9 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 22. ✅ CI/CD: GitHub Actions (pnpm + Node 24, `pnpm test` on push/PR to main)18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
 23. ✅ Caching: in-process model response cache (deterministic auxiliary calls: consolidation, log analysis) keyed by model+messages, stats/clear RPC+CLI+Settings panel
 24. ✅ Testing: unit suites for auth (scrypt+sessions+cookies), voice config, tool broker (offer/grants/ask/approve/deny/timeout), settings store — 31 tests, all offline
-25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up### Logs (error tracking + model-assisted resolution)
+25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up
+
+### Logs (error tracking + model-assisted resolution)
 26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minions
 27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
 28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
