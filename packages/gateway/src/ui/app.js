@@ -882,6 +882,8 @@ function showView(name) {
       else if (topic === "agents.changed") { if (S.view === "overview") loadOverview(); else if (S.view === "minions") loadMinions(); else S.minions = []; }
       else if (topic === "device.up" || topic === "device.down") { if (S.view === "devices") loadDevices(); else if (S.view === "overview") loadOverview() }
       else if (topic === "tools.ask") { toast("a device wants to run a tool", ""); if (S.view === "tools") loadTools() }
+      else if (topic === "alert.fired") { toast("alert: " + ((data && data.name) || "service") + " is down", "err"); if (S.view === "overview") loadOverview() }
+      else if (topic === "alert.resolved") { toast("resolved: " + ((data && data.name) || "service") + " is back up", "ok"); if (S.view === "overview") loadOverview() }
       else if (topic === "memory.added") { if (S.view === "memory") doMemoryBrowse() }
     };
     var everOpen = false;

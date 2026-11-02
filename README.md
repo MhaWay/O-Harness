@@ -120,7 +120,8 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 29. ✅ Mobile /m redesign — chat-first page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools)
 30. ✅ Backups: automatic daily ZIP snapshots of the data dir (atomic, prune-to-keep), manual run/list/restore via RPC+CLI+Settings card
 31. ✅ Doctor self-check: `o-h doctor` runs a full one-shot self-check (config, live gateway, instance duplicates, disk space, every model provider, voice services, TLS material, backup freshness, runtime) and prints pass/fail with fix hints; same via `doctor.run` RPC, and a "Run doctor" button in the GUI Overview
-32. Next: npm publish (deferred by user)
+32. ✅ Alert notifications: fired/resolved events toast in the GUI and land as entries in a dedicated `alerts` session (durable, restart-safe, browsable like chat history)
+33. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
@@ -144,6 +145,10 @@ o-h monitor add --name gpu-box --kind ws --url ws://10.0.0.5:8710/node
 o-h monitor alerts                       # history
 o-h monitor ack <alert-id>               # acknowledge
 ```
+Alerts double as notifications: `alert.fired` / `alert.resolved` broadcast as events (browser
+shows an error toast) and are appended as entries to a dedicated `alerts` session, so the whole
+service up/down history survives restarts and is browsable in the chat history list.
+
 ### Voice (dictation + text-to-speech)
 O-Harness integrates local speech models through an HTTP adapter (LFM3 batch API exposed on port 8023:
 `POST /tts_to_audio {text}` -> 24kHz PCM16 WAV, `POST /asr {audio_b64|audio_path, language}` -> text).

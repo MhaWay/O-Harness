@@ -218,8 +218,8 @@ export class Gateway {
     this.agents.load();
     this.scheduler.start();
     this.#seedMonitorServices();
-    this.#monitorTimer = setInterval(() => { void this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log).catch(() => { /* probe errors are logged inside */ }) }, 30_000);
-    void this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log).catch(() => { /* noop */ });
+    this.#monitorTimer = setInterval(() => { void this.monitor.check((t, d) => this.#monitorBroadcast(t, d), this.log).catch(() => { /* probe errors are logged inside */ }) }, 30_000);
+    void this.monitor.check((t, d) => this.#monitorBroadcast(t, d), this.log).catch(() => { /* noop */ });
 
     this.rpc.set(Methods.DevicesList, () => this.registry.listPublic());
     this.rpc.set(Methods.DeviceInfo, (p) => {
@@ -438,7 +438,7 @@ export class Gateway {
     this.rpc.set(Methods.CacheStats, () => ({ ...this.cache.stats(), ttlMs: this.cache.ttlMs, maxEntries: this.cache.maxEntries }));
     this.rpc.set(Methods.CacheClear, () => ({ cleared: this.cache.clear() }));
     this.rpc.set(Methods.MonitorStatus, () => ({ services: this.monitor.services, statuses: this.monitor.lastStatus, lastCheckAt: this.monitor.lastCheckAt, openAlerts: this.monitor.alerts.filter((a) => a.state === "firing" && !a.acked).length, alerts: this.monitor.alerts.slice(0, 30) }));
-    this.rpc.set(Methods.MonitorCheck, async () => await this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log));
+    this.rpc.set(Methods.MonitorCheck, async () => await this.monitor.check((t, d) => this.#monitorBroadcast(t, d), this.log));
     this.rpc.set(Methods.MonitorAdd, (p) => this.monitor.addService(String(p?.name ?? "service"), (String(p?.kind ?? "http") as "http" | "ws" | "models"), String(p?.url ?? "")));
     this.rpc.set(Methods.MonitorRemove, (p) => ({ removed: this.monitor.removeService(String(p?.id ?? "")) }));
     this.rpc.set(Methods.MonitorEnable, (p) => ({ enabled: this.monitor.setEnabled(String(p?.id ?? ""), Boolean(p?.enabled)) }));
@@ -1116,6 +1116,26 @@ export class Gateway {
     for (const ws of this.#clientSockets) {
       if (ws.readyState === WebSocket.OPEN) ws.send(payload);
     }
+  }
+
+  /**
+   * Monitor events go out live, and also leave a durable trail in a dedicated
+   * `alerts` session so notifications are never lost when nobody is watching.
+   */
+  #monitorBroadcast(topic: string, data: unknown) {
+    this.#broadcastEvent(topic, data);
+    if (topic !== "alert.fired" && topic !== "alert.resolved") return;
+    const a = data as { id?: string; name?: string; state?: string; detail?: string };
+    try {
+      if (!this.sessions.get("alerts")) this.sessions.create("alerts", "alerts");
+      const entry = this.sessions.append("alerts", {
+        ts: Date.now(),
+        from: "monitor",
+        kind: "alert",
+        data: { state: topic === "alert.fired" ? "firing" : "resolved", name: String(a?.name ?? ""), detail: String(a?.detail ?? ""), alertId: String(a?.id ?? "") },
+      });
+      this.#broadcastEvent("sessions.changed", { sessionId: "alerts", entry });
+    } catch { /* never let notification routing break a probe cycle */ }
   }
 }
 
