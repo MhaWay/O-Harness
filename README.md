@@ -103,7 +103,6 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 13. ✅ More device tools - mobile companion offers 6 tools (calendar.list/create, notes.list/create/search, device.info) brokered with per-call approval + standing grants
 14. ✅ Scheduler - time-triggered chat messages or minion runs (every N min / daily HH:mm / once ISO), persistent across restarts, enable/disable/runNow; o-h schedule ...
 15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
-16. Next: npm publish (deferred)
 17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
 19. ✅ Error tracking & logs: structured LogStore (ring + daily JSONL), logs.tail/stats/resolve RPC+CLI, GUI Logs view with model-assisted analysis
 20. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
