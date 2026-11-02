@@ -275,6 +275,72 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("usage: o-h node connect [--name <name>] [--device-id id] [--direct-port n] [--no-direct] [--overlay off|tailscale|zerotier] [--overlay-auth-key k] [--overlay-net id]");
   }
 
+  if (cmd === "auth") {
+    const sub = rest[0];
+    if (sub === "set-password") {
+      const pw = flag(args, "password") ?? rest[1];
+      if (!pw) throw new Error("usage: o-h auth set-password <password> [--url --port]");
+      await callOnce("auth.setPassword", { password: pw }, port);
+      console.log("master password set; all other login sessions were invalidated");
+      return;
+    }
+    if (sub === "login") {
+      const pw = flag(args, "password") ?? rest[1];
+      if (!pw) throw new Error("usage: o-h auth login <password>");
+      const r = await callOnce("auth.login", { password: pw }, port) as { sessionId: string };
+      console.log("ok — connect with ?session=" + r.sessionId + " (valid 30 days; use 'o-h auth sessions' to list)");
+      return;
+    }
+    if (sub === "sessions") {
+      const list = await callOnce("auth.sessions.list", undefined, port) as Array<Record<string, unknown>>;
+      for (const s of list) console.log(String(s.key) + " [" + s.kind + "] " + (s.label ?? "") + " expires " + new Date(Number(s.expiresAt)).toISOString());
+      return;
+    }
+    if (sub === "revoke-session") {
+      const key = rest[1];
+      if (!key) throw new Error("usage: o-h auth revoke-session <sessionKey>");
+      await callOnce("auth.sessions.revoke", { key }, port);
+      console.log("revoked");
+      return;
+    }
+    if (sub === "logout") { const k = flag(args, "key"); await callOnce("auth.logout", k ? { key: k } : undefined, port); console.log("logged out" + (k ? " (session revoked)" : " (this connection)")); return; }
+    if (sub === "oauth-set") {
+      const name = rest[1];
+      if (!name) throw new Error("usage: o-h auth oauth-set <name> --authorize-url --token-url --userinfo-url --client-id --client-secret [--scopes --subs]");
+      await callOnce("auth.oauth.set", {
+        name,
+        authorizeUrl: flag(args, "authorize-url") ?? "",
+        tokenUrl: flag(args, "token-url") ?? "",
+        userInfoUrl: flag(args, "userinfo-url") ?? "",
+        clientId: flag(args, "client-id") ?? "",
+        clientSecret: flag(args, "client-secret") ?? "",
+        scopes: flag(args, "scopes") ?? "",
+        subs: (flag(args, "subs") ?? "").split(",").map((x) => x.trim()).filter(Boolean),
+      }, port);
+      console.log("oauth provider '" + name + "' saved. login url: /oauth/" + name + "/start");
+      return;
+    }
+    if (sub === "oauth-remove") {
+      const name = rest[1];
+      if (!name) throw new Error("usage: o-h auth oauth-remove <name>");
+      await callOnce("auth.oauth.remove", { name }, port);
+      console.log("removed " + name);
+      return;
+    }
+    if (sub === "token-login") {
+      const en = rest[1] ?? "on";
+      if (!["on", "off"].includes(en)) throw new Error("usage: o-h auth token-login on|off");
+      const r = await callOnce("auth.setTokenLogin", { enabled: en === "on" }, port) as { tokenEnabled: boolean };
+      console.log("token login " + (r.tokenEnabled ? "ENABLED" : "DISABLED") + " (persisted; restart takes full effect)");
+      return;
+    }
+    if (sub === "info") {
+      const r = await fetch("http://127.0.0.1:" + port + "/auth/info").then((x) => x.json());
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    throw new Error("usage: o-h auth set-password|login|sessions|revoke-session|logout|oauth-set|oauth-remove|token-login|info");
+  }
   if (cmd === "pair") {
     const sub = rest[0];
     if (sub === "create") {

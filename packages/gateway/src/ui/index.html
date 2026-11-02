@@ -65,6 +65,12 @@
     <p class="dim">Paste the gateway token (found in <code>~/.o-harness/config.json</code>).</p>
     <input id="tokenInput" type="password" placeholder="gateway token" autocomplete="off">
     <button id="tokenBtn" class="primary">Connect</button>
+    <div id="pwRow" class="hidden" style="margin-top:10px;display:flex;gap:8px">
+      <span class="dim" style="width:100%;text-align:center;font-size:12px">or with your password</span>
+      <input id="pwInput" type="password" placeholder="password" autocomplete="current-password" style="flex:1">
+      <button id="pwBtn" class="primary">Sign in</button>
+    </div>
+    <div id="oauthRow" style="margin-top:10px"></div>
     <div id="tokenErr" class="err"></div>
   </div>
 </div>

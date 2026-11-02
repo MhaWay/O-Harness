@@ -21,7 +21,7 @@ export interface DeviceRuntime {
   lastSeen: number;
 }
 
-export type Handler = (params: any, ctx: { deviceId?: string; admin?: boolean }) => unknown | Promise<unknown>;
+export type Handler = (params: any, ctx: { deviceId?: string; admin?: boolean; sessionKey?: string }) => unknown | Promise<unknown>;
 
 export class Bus extends EventEmitter {}
 
@@ -45,7 +45,7 @@ export class RpcRouter {
   set(method: string, h: Handler) { this.#handlers.set(method, h); }
   has(method: string) { return this.#handlers.has(method); }
   methods() { return [...this.#handlers.keys()]; }
-  async call(method: string, params: unknown, ctx?: { deviceId?: string; admin?: boolean }): Promise<unknown> {
+  async call(method: string, params: unknown, ctx?: { deviceId?: string; admin?: boolean; sessionKey?: string }): Promise<unknown> {
     const h = this.#handlers.get(method);
     if (!h) throw new Error("unknown method: " + String(method));
     return await h(params ?? {}, ctx ?? {});

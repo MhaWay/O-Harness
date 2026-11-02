@@ -388,6 +388,70 @@
       };
     } catch (e) { host.innerHTML = '<div class="empty">' + esc(String(e)) + "</div>" }
   }
+  function authSectionHtml() {
+    return "<h3 style='margin:16px 0 8px'>Access</h3>" +
+      "<div class='row'><span style='width:130px' class='dim'>master password</span>" +
+      "<input id='pwSet1' type='password' placeholder='new password (min 8 chars)' style='width:200px'>" +
+      "<input id='pwSet2' type='password' placeholder='confirm' style='width:120px'>" +
+      "<button class='ghost' id='pwSave'>set password</button><span id='pwOut' class='dim'></span></div>" +
+      "<div class='row'><span style='width:130px' class='dim'>token login</span><label style='display:flex;gap:6px;align-items:center'><input id='tokEnabled' type='checkbox'> allow the raw token (" +
+      (S.tokenEnabled ? "on" : "off") + ")</label><span class='dim'>saved in ~/.o-harness/config.json</span><button class='ghost' id='tokSave'>apply</button></div>" +
+      "<div class='row'><span style='width:130px' class='dim'>login sessions</span><span id='sessOut' class='dim'>loading…</span></div>" +
+      "<table><tbody id='authSess'></tbody></table>" +
+      "<div class='row'><button class='ghost' id='logoutBtn'>log out of this browser</button><button class='ghost' id='oauthCfg'>+ configure oauth provider</button><span id='authOut' class='dim'></span></div>";
+  }
+  async function loadAuthPanel() {
+    try {
+      var info = await (await fetch("/auth/info")).json();
+      S.tokenEnabled = info.tokenEnabled;
+      var cb = $("#tokEnabled"); if (cb) cb.checked = !!info.tokenEnabled;
+      var sess = await rpc("auth.sessions.list", {});
+      var tb = $("#authSess");
+      if (tb) tb.innerHTML = (sess || []).map(function (s) {
+        return "<tr><td class='dim'>" + esc(s.kind) + (s.provider ? ":" + esc(s.provider) : "") + "</td><td class='dim'>" + esc(s.label || "") + "</td><td class='dim'>expires " + new Date(s.expiresAt).toLocaleDateString() + "</td><td><button class='ghost' data-authrev='" + esc(s.key) + "'>revoke</button></td></tr>";
+      }).join("");
+      $$("[data-authrev]").forEach(function (b) { b.onclick = async function () { await rpc("auth.sessions.revoke", { key: b.dataset.authrev }); toast("session revoked", "ok"); loadAuthPanel() } });
+      var pwS = $("#pwSave");
+      if (pwS) pwS.onclick = async function () {
+        var a = $("#pwSet1").value, c = $("#pwSet2").value;
+        if (a !== c) { $("#pwOut").textContent = "confirm does not match"; return }
+        try { await rpc("auth.setPassword", { password: a }); toast("password set — other sessions logged out", "ok"); $("#pwSet1").value = $("#pwSet2").value = ""; $("#pwOut").textContent = ""; }
+        catch (err) { $("#pwOut").textContent = String(err.message || err) }
+      };
+      var tokS = $("#tokSave");
+      if (tokS) tokS.onclick = async function () {
+        var st = S.settings; if (!st) return;
+        var cur = S.settingsRaw || st;
+        S.tokenEnabled = $("#tokEnabled").checked;
+        toast("token login " + (S.tokenEnabled ? "enabled" : "will be disabled") + " after restart — set tokenEnabled in config.json", "ok");
+      };
+      var lo = $("#logoutBtn");
+      if (lo) lo.onclick = async function () {
+        try { await rpc("auth.logout", {}); } catch (err) { }
+        location.href = "/logout";
+      };
+      var oc = $("#oauthCfg");
+      if (oc) oc.onclick = function () { showView("settings"); configureOAuth(); };
+    } catch (err) { var so = $("#sessOut"); if (so) so.textContent = "auth unavailable" }
+  }
+  async function configureOAuth() {
+    var name = await modal("OAuth provider",
+      "<div class='row'><input id='oName' placeholder='name (github, google, oidc)' style='width:100%'></div>" +
+      "<div class='row'><input id='oAuth' placeholder='authorize url' style='width:100%'></div>" +
+      "<div class='row'><input id='oTok' placeholder='token url' style='width:100%'></div>" +
+      "<div class='row'><input id='oUi' placeholder='userinfo url' style='width:100%'></div>" +
+      "<div class='row'><input id='oCid' placeholder='client id' style='width:50%'><input id='oCsec' type='password' placeholder='client secret' style='width:50%'></div>" +
+      "<div class='row'><input id='oScopes' placeholder='scopes (read:profile)' style='width:60%'><input id='oSubs' placeholder='allowed user ids, comma-separated (empty = anyone)' style='width:40%'></div>",
+      async function () {
+        var subs = ($("#oSubs").value || "").split(",").map(function (x) { return x.trim() }).filter(Boolean);
+        await rpc("auth.oauth.set", {
+          name: $("#oName").value, authorizeUrl: $("#oAuth").value, tokenUrl: $("#oTok").value,
+          userInfoUrl: $("#oUi").value, clientId: $("#oCid").value, clientSecret: $("#oCsec").value,
+          scopes: ($("#oScopes").value || "").trim(), subs: subs,
+        });
+        toast("oauth provider saved", "ok");
+      }, "save");
+  }
   async function loadSettings() {
     var st = S.settings = await rpc("settings.get", {});
     var def = st.default || {};
@@ -411,7 +475,9 @@
       '<select id="defEffort"><option value="none">thinking off</option><option value="low">low</option><option value="medium">medium</option><option value="xhigh">high</option></select></div>' +
       '<div class="row"><span style="width:130px" class="dim">self-update</span><label style="display:flex;gap:6px;align-items:center"><input id="allowUp" type="checkbox"' + (st.allowSelfUpdate ? " checked" : "") + "> allow model self-update</label><button class='ghost' id='checkUp'>Check for updates</button><span id=upOut class=dim></span></div>" +
       "<h3 style='margin:16px 0 8px'>Providers</h3><table><tr><th>name</th><th>base url</th><th>api key</th><th>default model</th><th>models</th><th></th></tr><tbody id='provRows'>" + rows + "</tbody></table>" +
-      "<div class='row' style='margin-top:12px'><button class='ghost' id='addProv'>+ Add provider</button><button class='primary' id='saveProv'>Save settings</button><span id='setOut' class='dim'></span></div>";
+      "<div class='row' style='margin-top:12px'><button class='ghost' id='addProv'>+ Add provider</button><button class='primary' id='saveProv'>Save settings</button><span id='setOut' class='dim'></span></div>" +
+      authSectionHtml();
+    loadAuthPanel();
     function fillModel(sel, names, cur) {
       sel.innerHTML = names.map(function (n) { return "<option>" + esc(n) + "</option>" }).join("") || "<option>(none)</option>";
       if (cur && names.indexOf(cur) >= 0) sel.value = cur;
@@ -609,9 +675,43 @@
       $("#app").classList.add("hidden");
       $("#tokenErr").textContent = msg || "";
       setTimeout(function () { $("#tokenInput").focus() }, 100);
+      loadAuthInfo();
     }
+    var authInfo = null;
+    async function loadAuthInfo() {
+      try { authInfo = await (await fetch("/auth/info")).json(); } catch (e) { return; }
+      var pw = $("#pwRow"), orow = $("#oauthRow");
+      if (!pw || !authInfo || authInfo.ok === false) return;
+      pw.classList.toggle("hidden", !authInfo.hasPassword);
+      if (orow && authInfo.providers) {
+        orow.innerHTML = authInfo.providers.map(function (p) {
+          return "<button class='ghost' style='margin-right:6px' data-oauth='" + esc(p.name) + "'>continue with " + esc(p.name) + "</button>";
+        }).join("");
+      }
+    }
+    document.addEventListener("click", function (ev) {
+      var b = ev.target && ev.target.closest ? ev.target.closest("[data-oauth]") : null;
+      if (b) location.href = "/oauth/" + b.dataset.oauth + "/start";
+    });
     $("#tokenBtn").onclick = doToken;
     $("#tokenInput").addEventListener("keydown", function (e) { if (e.key === "Enter") doToken() });
+    var pwB = $("#pwBtn");
+    if (pwB) pwB.onclick = doPw;
+    var pwI = $("#pwInput");
+    if (pwI) pwI.addEventListener("keydown", function (e) { if (e.key === "Enter") doPw() });
+    async function doPw() {
+      var v = $("#pwInput").value;
+      if (!v) return showGate("enter the password");
+      $("#tokenErr").textContent = "signing in...";
+      try {
+        var r = await fetch("/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: v }) });
+        var j = await r.json();
+        if (!j.ok) { showGate(j.error || "login failed"); return; }
+        everOpen = false;
+        window.OH.reconnect();
+        setTimeout(function () { if (!everOpen) showGate("signed in but handshake failed") }, 2500);
+      } catch (e) { showGate("login failed: " + e.message) }
+    }
     async function doToken() {
       var v = $("#tokenInput").value.trim();
       if (!v) return showGate("paste the token first");

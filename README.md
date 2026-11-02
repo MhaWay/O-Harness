@@ -31,6 +31,14 @@ node packages/cli/src/bin.ts chat history --session main
 # pairing a phone:
 node packages/cli/src/bin.ts pair create --kind mobile   # 6-digit code -> open http://<host>:<port>/m and enter it
 node packages/cli/src/bin.ts pair list | pair revoke <deviceId>
+node packages/cli/src/bin.ts auth set-password '<strong pw>'  # master password (scrypt) + session cookies
+
+node packages/cli/src/bin.ts auth sessions | revoke-session <key> | logout
+
+node packages/cli/src/bin.ts auth token-login on|off       # raw bootstrap token usable interchangeably
+
+node packages/cli/src/bin.ts auth oauth-set google --authorize-url ... --token-url ... --userinfo-url ... --client-id ... --client-secret ... --scopes openid --subs me@gmail.com
+
 # TLS (self-signed, auto-renewed):
 node packages/cli/src/bin.ts gateway start --tls auto   # https/wss on the same port
 node packages/cli/src/bin.ts node connect --url wss://<host>:<port>/node --insecure   # wss node (self-signed)
@@ -65,6 +73,7 @@ o-h schedule list | run <id> | disable <id> | enable <id> | remove <id>
 - **Plugins**: loaded dynamically by package name or path (`--plugins ./my-plugin.ts,pkg-name`).
 - **Protocol**: JSON-RPC-ish messages over WebSocket (see packages/protocol).
 - **TLS**: '--tls auto' serves https/wss with a self-signed cert auto-generated in <dataDir>/tls (825 days, renewed when <14d remain); pairing secrets are stored only as sha256 hashes, auth uses constant-time compare, /pair is rate-limited per IP (20 per 5 min).
+- **Login & sessions**: a master password (scrypt, N=16384) enables browser login (`POST /login`, HttpOnly `ohs` cookie, 30-day sessions, per-session revoke); OAuth providers (Google/GitHub/...) can be configured and their verified `sub` allow-listed per provider so devices on other accounts link together; `tokenEnabled` config flag makes the raw bootstrap token usable or not — the two paths are interchangeable. Session/cookie auth is admin-grade like the token.
 
 ## New UI (static assets)
 
@@ -93,6 +102,7 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
 16. Next: npm publish (deferred)
 17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
+18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
 
 ## Tests
 

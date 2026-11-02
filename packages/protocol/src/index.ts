@@ -48,6 +48,16 @@ export const Methods = {
   ScheduleRemove: "schedule.remove",
   ScheduleRunNow: "schedule.runNow",
   ScheduleSetDisabled: "schedule.setDisabled",
+  AuthInfo: "auth.info",
+  AuthSetPassword: "auth.setPassword",
+  AuthLogin: "auth.login",
+  AuthLogout: "auth.logout",
+  AuthSessionsList: "auth.sessions.list",
+  AuthSessionsRevoke: "auth.sessions.revoke",
+  AuthOAuthSet: "auth.oauth.set",
+  AuthOAuthRemove: "auth.oauth.remove",
+  AuthStartOAuth: "auth.oauth.start",
+  AuthSetTokenLogin: "auth.setTokenLogin",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

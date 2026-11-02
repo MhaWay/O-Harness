@@ -4,7 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
@@ -13,6 +13,7 @@ import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
+import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoSub, COOKIE_NAME, type OAuthProviderCfg } from "./auth.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
@@ -35,6 +36,8 @@ export interface GatewayConfig {
   overlayNetId?: string;
   /** TLS: auto = self-signed generated on demand; off = plain HTTP. */
   tls?: "auto" | "off";
+  /** Raw bootstrap token stays usable (default true). Set false to force password/oauth logins. */
+  tokenEnabled?: boolean;
 }
 
 export const DEFAULT_PORT = 8710;
@@ -50,11 +53,11 @@ export function isLoopbackHost(h: string): boolean {
   return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]" || h === "";
 }
 
-export function loadConfig(dataDir?: string): { port: number; token: string; plugins: string[] } {
+export function loadConfig(dataDir?: string): { port: number; token: string; plugins: string[]; tokenEnabled?: boolean } {
   const file = configFilePath(dataDir);
   try {
     const j = JSON.parse(readFileSync(file, "utf-8"));
-    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}), ...(j.tls ? { tls: String(j.tls) as "auto" | "off" } : {}) };
+    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.tokenEnabled === false ? { tokenEnabled: false } : {}), ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}), ...(j.tls ? { tls: String(j.tls) as "auto" | "off" } : {}) };
   } catch { /* first run */ }
   const cfg = { port: DEFAULT_PORT, token: randomBytes(16).toString("hex"), plugins: [] as string[] };
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
@@ -74,7 +77,7 @@ export function resolvePlugins(cfg: { plugins: string[] }, explicit?: string[]):
 
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout>; conn?: WebSocket }
 
-interface AuthCtx { admin?: boolean; deviceId?: string }
+interface AuthCtx { admin?: boolean; deviceId?: string; sessionKey?: string }
 
 export class Gateway {
   config: GatewayConfig;
@@ -88,6 +91,7 @@ export class Gateway {
   agents: AgentRuntime;
   chat: ChatRuntime;
   pairing: PairingStore;
+  auth: AuthStore;
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
   tools: ToolBroker;
@@ -109,6 +113,7 @@ export class Gateway {
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
+    this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.consolidator = new MemoryConsolidator(this.memory, this.settings);
     this.grants = new GrantsStore(dataDirOf(dataDir));
@@ -320,6 +325,54 @@ export class Gateway {
     });
     this.rpc.set(Methods.PairingList, () => this.pairing.list().map((d) => ({ ...d, secret: undefined })));
     this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); return { ok: true }; });
+    // --- authentication methods (password / sessions / oauth) ---
+    this.rpc.set(Methods.AuthInfo, () => ({
+      hasPassword: !!this.auth.pw,
+      tokenEnabled: this.config.tokenEnabled !== false,
+      providers: Object.entries(this.auth.oauth).map(([name, c]) => ({ name, scopes: c.scopes, hasSubs: Array.isArray(c.subs) && c.subs.length > 0 })),
+    }));
+    this.rpc.set(Methods.AuthSetPassword, (p) => { this.auth.setPassword(String(p?.password ?? "")); return { ok: true }; });
+    this.rpc.set(Methods.AuthLogin, (p, ctx) => {
+      const pw = String(p?.password ?? "");
+      if (!ctx.admin) {
+        if (!this.auth.verify(pw)) throw new Error("wrong password");
+      }
+      const { id } = this.auth.newSession({ kind: "password", label: "rpc login" });
+      return { ok: true, sessionId: id };
+    });
+    this.rpc.set(Methods.AuthLogout, (p, ctx) => {
+      if (ctx.sessionKey && !p?.key) { this.auth.revoke(ctx.sessionKey); return { ok: true }; }
+      if (p?.key && (ctx.admin || ctx.sessionKey)) { this.auth.revoke(String(p.key)); return { ok: true, byKey: true }; }
+      throw new Error("current connection is not a login session");
+    });
+    this.rpc.set(Methods.AuthSessionsList, () => this.auth.listSessions().map((s) => ({ key: s.key, ...s.rec })));
+    this.rpc.set(Methods.AuthSessionsRevoke, (p) => { this.auth.revoke(String(p?.key ?? "")); return { ok: true }; });
+    this.rpc.set(Methods.AuthOAuthSet, (p) => {
+      const name = String(p?.name ?? "").replace(/[^a-z0-9._-]/g, "");
+      if (!name) throw new Error("oauth.set: name required");
+      const cfg: OAuthProviderCfg = {
+        clientId: String(p?.clientId ?? ""), clientSecret: String(p?.clientSecret ?? ""),
+        authorizeUrl: String(p?.authorizeUrl ?? ""), tokenUrl: String(p?.tokenUrl ?? ""),
+        userInfoUrl: String(p?.userInfoUrl ?? ""), scopes: String(p?.scopes ?? ""),
+        subs: Array.isArray(p?.subs) ? p.subs.map(String) : [],
+      };
+      for (const k of ["authorizeUrl", "tokenUrl", "userInfoUrl"] as const) {
+        if (!/^https?:\/\//.test(cfg[k])) throw new Error("oauth.set: bad " + k);
+      }
+      if (!cfg.clientId) throw new Error("oauth.set: clientId required");
+      this.auth.setOAuth(name, cfg);
+      return { ok: true };
+    });
+    this.rpc.set(Methods.AuthOAuthRemove, (p) => { this.auth.removeOAuth(String(p?.name ?? "")); return { ok: true }; });
+    this.rpc.set(Methods.AuthSetTokenLogin, (p) => {
+      // flip tokenEnabled in the gateway's own config file (loadConfig reads this on next start)
+      const path = configFilePath(this.#dataDir);
+      const cur = JSON.parse(readFileSync(path, "utf-8"));
+      cur.tokenEnabled = Boolean(p?.enabled);
+      writeFileSync(path, JSON.stringify(cur, null, 2), { mode: 0o600 });
+      this.config.tokenEnabled = cur.tokenEnabled;
+      return { ok: true, tokenEnabled: cur.tokenEnabled };
+    });
     // --- device-offered tools + authorization grants ---
     this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {
       const deviceId = ctx.deviceId ?? "local"; // registered device socket; admin callers pass deviceId param
@@ -390,6 +443,106 @@ export class Gateway {
         }
         return;
       }
+      if (url.pathname === "/auth/info") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({
+          ok: true,
+          hasPassword: !!this.auth.pw,
+          tokenEnabled: this.config.tokenEnabled !== false,
+          providers: Object.entries(this.auth.oauth).map(([name, c]) => ({ name, scopes: c.scopes, hasSubs: Array.isArray(c.subs) && c.subs.length > 0 })),
+        }));
+        return;
+      }
+      if (url.pathname === "/login" && req.method === "POST") {
+        let body = "";
+        req.on("data", (c) => { body += String(c); if (body.length > 64_000) req.destroy(); });
+        req.on("end", async () => {
+          const ip = (req.socket.remoteAddress ?? "?unknown").replace(/^::ffff:/, "");
+          if (!this.#loginAllowed(ip)) {
+            res.writeHead(429, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "too many login attempts, wait 5 minutes" }));
+            return;
+          }
+          let pw = "";
+          try { pw = String(JSON.parse(body || "{}").password ?? ""); } catch { pw = ""; }
+          if (!this.auth.pw) {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "no password configured yet (o-harness auth set-password)" }));
+            return;
+          }
+          if (!this.auth.verify(pw)) {
+            res.writeHead(401, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "wrong password" }));
+            return;
+          }
+          const { id } = this.auth.newSession({ kind: "password", label: "password login" });
+          res.writeHead(200, { "content-type": "application/json", "set-cookie": sessionCookieValue(id) });
+          res.end(JSON.stringify({ ok: true, sessionId: id }));
+        });
+        return;
+      }
+      if (url.pathname === "/logout") {
+        res.writeHead(302, { location: "/", "set-cookie": clearCookieValue() });
+        res.end();
+        return;
+      }
+      if (url.pathname.startsWith("/oauth/") && url.pathname.endsWith("/start")) {
+        const name = url.pathname.slice("/oauth/".length, -"/start".length).replace(/[^a-z0-9._-]/g, "");
+        const cfg = this.auth.oauth[name];
+        if (!cfg) { res.writeHead(404); res.end("unknown oauth provider"); return; }
+        const state = randomBytes(16).toString("hex");
+        const redir = (req.headers["x-oh-redirect"] ?? "").toString().slice(0, 200) || "/";
+        const u = new URL(cfg.authorizeUrl);
+        u.searchParams.set("client_id", cfg.clientId);
+        u.searchParams.set("redirect_uri", "http://" + (req.headers.host ?? "localhost") + "/oauth/" + name + "/callback");
+        u.searchParams.set("response_type", "code");
+        u.searchParams.set("scope", cfg.scopes);
+        u.searchParams.set("state", state);
+        res.writeHead(302, { location: u.toString(), "set-cookie": "oh_oauth_state_" + name + "=" + state + "; HttpOnly; SameSite=Lax; Path=/; Max-Age=600" });
+        res.end();
+        return;
+      }
+      if (url.pathname.startsWith("/oauth/") && url.pathname.endsWith("/callback")) {
+        const name = url.pathname.slice("/oauth/".length, -"/callback".length).replace(/[^a-z0-9._-]/g, "");
+        const cfg = this.auth.oauth[name];
+        const code = url.searchParams.get("code") ?? "";
+        const stateQ = url.searchParams.get("state") ?? "";
+        const stateC = parseCookie(req.headers.cookie, "oh_oauth_state_" + name) ?? "";
+        if (!cfg) { res.writeHead(404); res.end("unknown oauth provider"); return; }
+        if (!code || !stateQ || stateQ !== stateC) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "bad oauth state or missing code" }));
+          return;
+        }
+        (async () => {
+        try {
+          const tokRes = await fetch(cfg.tokenUrl, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+            body: new URLSearchParams({ grant_type: "authorization_code", code, client_id: cfg.clientId, client_secret: cfg.clientSecret, redirect_uri: "http://" + (req.headers.host ?? "localhost") + "/oauth/" + name + "/callback" }).toString(),
+          });
+          const tokJson: any = await tokRes.json().catch(() => null);
+          const access = String(tokJson?.access_token ?? "");
+          if (!access) throw new Error("no access_token from provider");
+          const uiRes = await fetch(cfg.userInfoUrl, { headers: { authorization: "Bearer " + access, accept: "application/json" } });
+          const uiJson: any = await uiRes.json().catch(() => null);
+          const sub = userInfoSub(uiJson);
+          if (!sub) throw new Error("provider returned no user id");
+          if (Array.isArray(cfg.subs) && cfg.subs.length > 0 && !cfg.subs.includes(sub)) {
+            res.writeHead(403, { "content-type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "user " + sub + " is not allowed on this gateway" }));
+            return;
+          }
+          const { id } = this.auth.newSession({ kind: "oauth", provider: name, sub, label: name + ":" + sub });
+          res.writeHead(302, { location: "/", "set-cookie": [sessionCookieValue(id), "oh_oauth_state_" + name + "=; Max-Age=0; Path=/"] });
+          res.end();
+        } catch (err) {
+          res.writeHead(502, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "oauth exchange failed: " + String((err as Error)?.message ?? err) }));
+        }
+        })();
+        return;
+      }
       if (url.pathname === "/pair" && req.method === "POST") {
         let body = "";
         req.on("data", (c) => { body += String(c); if (body.length > 10_000) req.destroy(); });
@@ -455,12 +608,25 @@ export class Gateway {
     const url = new URL(req.url ?? "/", "http://local");
     const bearer = (req.headers["authorization"] ?? "").replace(/^Bearer\s+/i, "");
     const token = url.searchParams.get("token") || bearer;
-    if (token === this.config.token) return { admin: true };
+    if (this.config.tokenEnabled !== false && token === this.config.token) return { admin: true };
+    const cookie = parseCookie(req.headers.cookie, COOKIE_NAME);
+    const sessQ = url.searchParams.get("session") || "";
+    const sessId = cookie || sessQ;
+    if (sessId && this.auth.resolve(sessId)) return { admin: true, sessionKey: createHash("sha256").update(sessId).digest("hex") };
     const secret = url.searchParams.get("secret") || "";
     const paired = this.pairing.auth(secret);
     if (paired) return { deviceId: paired.id };
     return null;
   }
+
+  #loginAllowed(ip: string): boolean {
+    const now = Date.now();
+    const rec = this.#pairHits.get("login:" + ip);
+    if (!rec || now > rec.resetAt) { this.#pairHits.set("login:" + ip, { n: 1, resetAt: now + 300_000 }); return true; }
+    rec.n++;
+    return rec.n <= 12;
+  }
+
 
   #pairAllowed(ip: string): boolean {
     const now = Date.now();
@@ -569,7 +735,7 @@ export class Gateway {
 
   #callScoped(method: string, params: unknown, ctx: AuthCtx): Promise<unknown> {
     try { this.#checkScope(ctx, method); } catch (e) { return Promise.reject(e); }
-    return this.rpc.call(method, params, { deviceId: ctx.admin ? undefined : ctx.deviceId, admin: ctx.admin });
+    return this.rpc.call(method, params, { deviceId: ctx.admin ? undefined : ctx.deviceId, admin: ctx.admin, sessionKey: ctx.sessionKey });
   }
 
   #onClientSocket(ws: WebSocket) {
