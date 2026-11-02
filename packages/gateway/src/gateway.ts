@@ -13,6 +13,7 @@ import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
+const UI_DIR = new URL("./ui/", import.meta.url);
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
@@ -367,8 +368,26 @@ export class Gateway {
     const handler = (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "local"));
       if (url.pathname === "/" || url.pathname === "/index.html") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        res.end(readFileSync(new URL("index.html", UI_DIR), "utf8"));
+        return;
+      }
+      if (url.pathname === "/legacy") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(WEBUI_HTML);
+        return;
+      }
+      if (url.pathname.startsWith("/assets/")) {
+        const name = url.pathname.slice("/assets/".length).replace(/[^a-z0-9.-]/g, "");
+        const mime: Record<string, string> = { ".css": "text/css", ".js": "text/javascript", ".html": "text/html" };
+        try {
+          const body = readFileSync(new URL(name, UI_DIR), "utf8");
+          const ext = name.slice(name.lastIndexOf("."));
+          res.writeHead(200, { "content-type": (mime[ext] ?? "text/plain") + "; charset=utf-8", "cache-control": "no-store" });
+          res.end(body);
+        } catch {
+          res.writeHead(404); res.end("not found");
+        }
         return;
       }
       if (url.pathname === "/pair" && req.method === "POST") {

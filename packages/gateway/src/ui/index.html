@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O-Harness</title>
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div id="app" class="hidden">
+  <aside id="sidebar">
+    <div class="brand"><span class="logo">O</span> Harness <span id="connDot" class="dot" title="connection"></span></div>
+    <button id="newChatBtn" class="newbtn">+ New chat</button>
+    <div class="nav">
+      <button data-view="chat" class="on"><span>💬</span>Chat</button>
+      <button data-view="overview"><span>📊</span>Overview</button>
+      <button data-view="sessions"><span>🗂</span>Sessions</button>
+      <button data-view="minions"><span>⚙️</span>Minions</button>
+      <button data-view="scheduler"><span>⏰</span>Scheduler</button>
+      <button data-view="memory"><span>🧠</span>Memory</button>
+      <button data-view="tools"><span>🔧</span>Tools</button>
+      <button data-view="devices"><span>📱</span>Devices</button>
+      <button data-view="settings"><span>⚙</span>Settings</button>
+    </div>
+    <div class="sessions-mini">
+      <div class="mini-title">Conversations</div>
+      <div id="miniSessions"></div>
+    </div>
+    <div class="foot" id="statusFoot">…</div>
+  </aside>
+  <main>
+    <header id="topbar">
+      <button id="menuBtn" class="ghostbtn hidden" title="menu">&#9776;</button>
+      <div id="viewTitle">Chat</div>
+      <div class="spacer"></div>
+      <div id="modelPill" class="pill" title="current model">…</div>
+      <button id="paletteBtn" class="ghostbtn" title="Ctrl+K">⌘K</button>
+    </header>
+    <div id="viewHost">
+      <section class="view on" id="v-chat">
+        <div id="chatLog"></div>
+        <div class="composer">
+          <textarea id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter newline)"></textarea>
+          <div class="composer-tools">
+            <select id="effortSel" title="reasoning effort"><option value="none">thinking: off</option><option value="low">low</option><option value="medium">medium</option><option value="xhigh">xhigh</option></select>
+            <button id="sendBtn" class="primary">Send</button>
+          </div>
+        </div>
+      </section>
+      <section class="view" id="v-overview"></section>
+      <section class="view" id="v-sessions"></section>
+      <section class="view" id="v-minions"></section>
+      <section class="view" id="v-scheduler"></section>
+      <section class="view" id="v-memory"></section>
+      <section class="view" id="v-tools"></section>
+      <section class="view" id="v-devices"></section>
+      <section class="view" id="v-settings"></section>
+    </div>
+  </main>
+</div>
+<div id="tokenGate" class="gate hidden">
+  <div class="card">
+    <div class="logo big">O</div>
+    <h1>Connect to your gateway</h1>
+    <p class="dim">Paste the gateway token (found in <code>~/.o-harness/config.json</code>).</p>
+    <input id="tokenInput" type="password" placeholder="gateway token" autocomplete="off">
+    <button id="tokenBtn" class="primary">Connect</button>
+    <div id="tokenErr" class="err"></div>
+  </div>
+</div>
+<div id="toasts"></div>
+<div id="modalHost"></div>
+<script src="/assets/client.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>
