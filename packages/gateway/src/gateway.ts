@@ -314,7 +314,15 @@ export class Gateway {
     this.rpc.set(Methods.ChatHistory, (p) => {
       const s = this.sessions.get(String(p?.sessionId ?? "main"));
       if (!s) return null;
-      return s.entries.filter((e) => e.kind === "chat").map((e) => { const t = (e.data as any).tools; return { seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text, ...(t ? { tools: t } : {}) }; });
+      const all = s.entries.filter((e) => e.kind === "chat");
+      const map = (e: (typeof all)[number]) => { const t = (e.data as any).tools; return { seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text, ...(t ? { tools: t } : {}) }; };
+      // pagination: newest `limit` entries, or the window ending before `since` for "load earlier"
+      const limit = p?.limit ? Math.max(1, Math.min(500, Number(p.limit))) : all.length || 1;
+      const since = p?.since ? Number(p.since) : Infinity;
+      const idx = all.findIndex((e) => e.seq >= since);
+      const end = idx === -1 ? all.length : idx;
+      const start = Math.max(0, end - limit);
+      return all.slice(start, end).map(map);
     });
 
     // scheduler: time-triggered chat messages and minion runs

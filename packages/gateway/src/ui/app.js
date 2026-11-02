@@ -139,19 +139,56 @@ function showView(name) {
     var b = document.createElement("div"); b.className = "md"; b.innerHTML = html; d.appendChild(b);
     return d;
   }
+  var PAGE = 60;
+  var chatEarliest = 0;
+  var chatLoadingEarlier = false;
+  function bubbleFor(e) {
+    var tools = (e.tools || []).map(function (t) { return '<span class="badge">' + esc(t) + "</span>" }).join("");
+    var bbl = bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools });
+    if (e.role === "assistant") { var mh = bbl.querySelector(".meta"); if (mh) addPlay(mh, e.text); }
+    return bbl;
+  }
+  function addEarlierBtn() {
+    if (!chatEarliest || $("#chatEarlier")) return;
+    var b = document.createElement("button");
+    b.id = "chatEarlier"; b.className = "ghost"; b.textContent = "Load earlier messages";
+    b.onclick = loadEarlier;
+    $("#chatLog").insertBefore(b, $("#chatLog").firstChild);
+  }
+  async function loadEarlier() {
+    if (!chatEarliest || chatLoadingEarlier) return;
+    chatLoadingEarlier = true;
+    var log = $("#chatLog");
+    var b1 = $("#chatEarlier"); if (b1) b1.textContent = "loading...";
+    var prevScroll = log.scrollHeight - log.scrollTop;
+    try {
+      var h = await rpc("chat.history", { sessionId: S.session, limit: PAGE, since: chatEarliest });
+      if (h && h.length) {
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < h.length; i++) frag.appendChild(bubbleFor(h[i]));
+        log.insertBefore(frag, log.firstChild);
+        chatEarliest = h.length >= PAGE ? h[0].seq : 0;
+      } else chatEarliest = 0;
+    } catch (e) { toast(String(e), "err"); }
+    var b2 = $("#chatEarlier");
+    if (chatEarliest) { if (b2) b2.textContent = "Load earlier messages"; }
+    else if (b2) b2.remove();
+    log.scrollTop = log.scrollHeight - prevScroll;
+    chatLoadingEarlier = false;
+  }
   async function openChat(sessionId) {
     S.session = sessionId;
     renderMiniSessions();
+    chatEarliest = 0;
     var log = $("#chatLog"); log.innerHTML = "";
     try {
-      var h = await rpc("chat.history", { sessionId: sessionId });
+      var h = await rpc("chat.history", { sessionId: sessionId, limit: PAGE });
       if (!h || !h.length) log.appendChild(bubble("assistant", '<p class="dim">(no messages yet)</p>'));
-      else h.forEach(function (e) {
-        var tools = (e.tools || []).map(function (t) { return '<span class="badge">' + esc(t) + "</span>" }).join("");
-        var bbl = bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools });
-        if (e.role === "assistant") { var mh = bbl.querySelector(".meta"); if (mh) addPlay(mh, e.text); }
-        log.appendChild(bbl);
-      });
+      else {
+        if (h.length >= PAGE) chatEarliest = h[0].seq;
+        for (var i = 0; i < h.length; i++) log.appendChild(bubbleFor(h[i]));
+      }
+      if (chatEarliest) addEarlierBtn();
       log.scrollTop = log.scrollHeight;
     } catch (e) { toast("history: " + e, "err") }
   }
