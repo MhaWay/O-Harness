@@ -102,7 +102,25 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
 16. Next: npm publish (deferred)
 17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
+19. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
 18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
+
+
+### Voice (dictation + text-to-speech)
+O-Harness integrates local speech models through an HTTP adapter (LFM3 batch API exposed on port 8023:
+`POST /tts_to_audio {text}` -> 24kHz PCM16 WAV, `POST /asr {audio_b64|audio_path, language}` -> text).
+
+```bash
+o-h voice probe                            # check batch + realtime endpoints
+o-h voice say "ciao mondo" --out out.wav   # synthesize to wav
+o-h voice asr rec.wav                      # transcribe
+o-h voice save --tts-url http://127.0.0.1:8023 --rt-url ws://127.0.0.1:8024/ --auto-speak on
+```
+
+In the web UI: the mic button in the composer dictates (mic -> 16kHz PCM -> ASR -> text in the box),
+the speaker button toggles auto-speak of replies, and each assistant reply carries a `listen` button.
+`GET /api/voice/tts?text=...` serves WAV for clients (token auth). Settings > Voice edits
+asr/tts/realtime URLs, language, voice and auto-speak, with a live service probe.
 
 ## Tests
 

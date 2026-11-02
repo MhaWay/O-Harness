@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { loadConfig } from "@o-harness/gateway";
 import { createDefaultGateway } from "@o-harness/gateway";
 import { runNodeLoop } from "@o-harness/gateway";
@@ -341,6 +341,53 @@ export async function main(args: string[]): Promise<void> {
     }
     throw new Error("usage: o-h auth set-password|login|sessions|revoke-session|logout|oauth-set|oauth-remove|token-login|info");
   }
+  if (cmd === "voice") {
+    const sub = rest[0] ?? "get";
+    const vargs = rest.slice(1);
+    if (sub === "get") {
+      const v = await callOnce("voice.get", undefined, port);
+      console.log(JSON.stringify(v, null, 2));
+      return;
+    }
+    if (sub === "save") {
+      const patch: Record<string, unknown> = {};
+      const asrUrl = flag(vargs, "asr-url"); const ttsUrl = flag(vargs, "tts-url");
+      const rtUrl = flag(vargs, "rt-url"); const vname = flag(vargs, "voice");
+      const auto = flag(vargs, "auto-speak"); const lang = flag(vargs, "language");
+      if (asrUrl) patch.asr = { url: asrUrl };
+      if (ttsUrl) patch.tts = { url: ttsUrl };
+      if (lang) { patch.asr = { ...(patch.asr || {}), language: lang }; patch.tts = { ...(patch.tts || {}), language: lang }; }
+      if (rtUrl || vname) patch.realtime = { ...(rtUrl ? { url: rtUrl } : {}), ...(vname ? { voice: vname } : {}) };
+      if (auto) patch.autoSpeak = auto === "on" || auto === "true" || auto === "1";
+      const v = await callOnce("voice.save", patch, port);
+      console.log(JSON.stringify(v, null, 2));
+      return;
+    }
+    if (sub === "say") {
+      const text = vargs.filter((a) => !a.startsWith("--")).join(" ");
+      if (!text) throw new Error("usage: o-h voice say <text> [--out file.wav]");
+      const r = await callOnce("voice.speak", { text }, port);
+      const out = flag(vargs, "out") ?? "/tmp/oh-tts.wav";
+      writeFileSync(out, Buffer.from(String(r.audio), "base64"));
+      console.log("wav written: " + out);
+      return;
+    }
+    if (sub === "asr") {
+      const file = vargs.filter((a) => !a.startsWith("--"))[0];
+      if (!file) throw new Error("usage: o-h voice asr <audio.wav>");
+      const audio = readFileSync(file).toString("base64");
+      const r = await callOnce("voice.asr", { audio }, port);
+      console.log(r.text);
+      return;
+    }
+    if (sub === "probe") {
+      const r = await callOnce("voice.probe", undefined, port);
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    throw new Error("unknown voice subcommand: " + sub + " (get|save|say|asr|probe)");
+  }
+
   if (cmd === "pair") {
     const sub = rest[0];
     if (sub === "create") {

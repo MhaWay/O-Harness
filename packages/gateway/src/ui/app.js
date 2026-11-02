@@ -116,7 +116,9 @@
       if (!h || !h.length) log.appendChild(bubble("assistant", '<p class="dim">(no messages yet)</p>'));
       else h.forEach(function (e) {
         var tools = (e.tools || []).map(function (t) { return '<span class="badge">' + esc(t) + "</span>" }).join("");
-        log.appendChild(bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools }));
+        var bbl = bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools });
+        if (e.role === "assistant") { var mh = bbl.querySelector(".meta"); if (mh) addPlay(mh, e.text); }
+        log.appendChild(bbl);
       });
       log.scrollTop = log.scrollHeight;
     } catch (e) { toast("history: " + e, "err") }
@@ -136,7 +138,13 @@
     S.streaming.dataset.buf = "";
     try {
       var r = await rpc("chat.send", { sessionId: S.session, message: msg, effort: $("#effortSel").value });
-      if (S.streaming) S.streaming.innerHTML = md(r && r.text ? r.text : String(r || ""));
+      var replyText = r && r.text ? r.text : String(r || "");
+      if (S.streaming) {
+        S.streaming.innerHTML = md(replyText);
+        var metaHost = S.streaming.parentElement && S.streaming.parentElement.querySelector(".meta");
+        if (metaHost) addPlay(metaHost, replyText);
+        if (V.autoSpeak) speakText(replyText);
+      }
     } catch (e) {
       if (S.streaming) S.streaming.innerHTML = '<span class="dim">error: ' + esc(String(e)) + "</span>";
       toast(String(e), "err");
@@ -146,6 +154,71 @@
     $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
   }
   window.sendChat = sendChat;
+  // ---- voice: dictation (mic -> LFM3 ASR) + TTS of replies ----
+  var V = { autoSpeak: localStorage.getItem("oh.autospeak") === "1", audioCtx: null, chunks: null, proc: null, stream: null, recording: false };
+  function toB64(bytes) { var bin = ""; var arr = new Uint8Array(bytes); for (var i = 0; i < arr.length; i += 8192) bin += String.fromCharCode.apply(null, arr.subarray(i, i + 8192)); return btoa(bin); }
+  function encodeWav(samples, rate) {
+    var buf = new ArrayBuffer(44 + samples.length * 2);
+    var v = new DataView(buf);
+    var wstr = function (o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)) };
+    wstr(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); wstr(8, "WAVE"); wstr(12, "fmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+    v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    wstr(36, "data"); v.setUint32(40, samples.length * 2, true);
+    var off = 44; for (var i = 0; i < samples.length; i++, off += 2) v.setInt16(off, Math.max(-1, Math.min(1, samples[i])) * 32767, true);
+    return buf;
+  }
+  function speakText(text) {
+    var t = String(text || "").trim();
+    if (!t) return Promise.resolve();
+    if (t.length > 1400) t = t.slice(0, 1400);
+    return fetch("/api/voice/tts?text=" + encodeURIComponent(t) + "&token=" + encodeURIComponent(window.OH.getToken()), { cache: "no-store" })
+      .then(function (res) { if (!res.ok) throw new Error("tts http " + res.status); return res.blob() })
+      .then(function (blob) { var a = new Audio(URL.createObjectURL(blob)); a.play(); setTimeout(function () { URL.revokeObjectURL(a.src) }, 60000); return 1 });
+  }
+  async function micToggle() {
+    if (V.recording) { stopMic(); return; }
+    try {
+      V.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      V.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      var src = V.audioCtx.createMediaStreamSource(V.stream);
+      V.proc = V.audioCtx.createScriptProcessor(4096, 1, 1);
+      V.chunks = [];
+      V.proc.onaudioprocess = function (e) { V.chunks.push(Float32Array.from(e.inputBuffer.getChannelData(0))) };
+      src.connect(V.proc); V.proc.connect(V.audioCtx.destination);
+      V.recording = true;
+      var mb = $("#micBtn"); if (mb) { mb.classList.add("rec"); mb.title = "stop dictation" }
+      toast("listening... speak now, then tap the mic again", "ok");
+    } catch (e) { toast("mic unavailable: " + (e.message || e), "err"); }
+  }
+  async function stopMic() {
+    if (!V.recording) return;
+    V.recording = false;
+    var mb = $("#micBtn"); if (mb) { mb.classList.remove("rec"); mb.title = "dictate with voice (LFM3)" }
+    try { V.proc.disconnect(); } catch (e) { }
+    try { if (V.stream) V.stream.getTracks().forEach(function (t) { t.stop() }); } catch (e) { }
+    var len = 0; for (var i = 0; i < V.chunks.length; i++) len += V.chunks[i].length;
+    if (!len) { toast("no audio captured", "warn"); return; }
+    var pcm = new Float32Array(len); var off = 0;
+    for (var i = 0; i < V.chunks.length; i++) { pcm.set(V.chunks[i], off); off += V.chunks[i].length }
+    var rate = V.audioCtx.sampleRate;
+    try { V.audioCtx.close(); } catch (e) { }
+    toast("transcribing...", "");
+    try {
+      var r = await rpc("voice.asr", { audio: toB64(encodeWav(pcm, rate)) });
+      var inp = $("#chatInput");
+      inp.value = (inp.value ? inp.value + " " : "") + String(r.text || "");
+      inp.dispatchEvent(new Event("input"));
+      inp.focus();
+      toast("dictation added to the message", "ok");
+    } catch (e) { toast("dictation failed: " + (e.message || e), "err"); }
+  }
+  function addPlay(metaHost, text) {
+    var b = document.createElement("button");
+    b.className = "ghost"; b.textContent = "listen"; b.style.cssText = "margin-left:6px;padding:1px 7px;font-size:11px";
+    b.onclick = function () { b.textContent = "..."; speakText(text).then(function () { b.textContent = "listen" }).catch(function () { b.textContent = "listen"; toast("tts failed", "err") }) };
+    metaHost.appendChild(b);
+  }
   function renderMiniSessions() {
     var host = $("#miniSessions");
     if (!host) return;
@@ -388,6 +461,30 @@
       };
     } catch (e) { host.innerHTML = '<div class="empty">' + esc(String(e)) + "</div>" }
   }
+  function voiceSectionHtml() {
+    return "<h3 style='margin:16px 0 8px'>Voice (LFM3)</h3>" +
+      "<div class='row'><span style='width:130px' class='dim'>dictation / asr</span><input id='vAsrUrl' style='width:280px' placeholder='http://127.0.0.1:8023'><label style='display:flex;gap:6px;align-items:center'><input id='vAsrOn' type='checkbox'> enabled</label></div>" +
+      "<div class='row'><span style='width:130px' class='dim'>tts</span><input id='vTtsUrl' style='width:280px' placeholder='http://127.0.0.1:8023'><label style='display:flex;gap:6px;align-items:center'><input id='vTtsOn' type='checkbox'> enabled</label></div>" +
+      "<div class='row'><span style='width:130px' class='dim'>language</span><input id='vLang' style='width:90px' placeholder='italian'></div>" +
+      "<div class='row'><span style='width:130px' class='dim'>realtime</span><input id='vRtUrl' style='width:280px' placeholder='ws://127.0.0.1:8024/'><select id='vVoice'><option value='female'>female</option><option value='male'>male</option></select><label style='display:flex;gap:6px;align-items:center'><input id='vAuto' type='checkbox'> auto-speak replies</label></div>" +
+      "<div class='row'><button class='ghost' id='vProbe'>test voice services</button><button class='primary' id='vSave'>save voice settings</button><span id='vOut' class='dim'></span></div>";
+  }
+  async function loadVoiceCard() {
+    try {
+      var v = await rpc("voice.get", {});
+      if (!v) return;
+      if ($("#vAsrUrl")) {
+        $("#vAsrUrl").value = (v.asr && v.asr.url) || "";
+        $("#vAsrOn").checked = !!(v.asr && v.asr.enabled);
+        $("#vTtsUrl").value = (v.tts && v.tts.url) || "";
+        $("#vTtsOn").checked = !!(v.tts && v.tts.enabled);
+        $("#vLang").value = (v.asr && v.asr.language) || "italian";
+        $("#vRtUrl").value = (v.realtime && v.realtime.url) || "";
+        $("#vVoice").value = (v.realtime && v.realtime.voice) || "female";
+        $("#vAuto").checked = !!(v.autoSpeak);
+      }
+    } catch (e) { /* voice rpc unavailable */ }
+  }
   function authSectionHtml() {
     return "<h3 style='margin:16px 0 8px'>Access</h3>" +
       "<div class='row'><span style='width:130px' class='dim'>master password</span>" +
@@ -407,6 +504,7 @@
       var cb = $("#tokEnabled"); if (cb) cb.checked = !!info.tokenEnabled;
       var sess = await rpc("auth.sessions.list", {});
       var tb = $("#authSess");
+      var so = $("#sessOut"); if (so) so.textContent = ((sess || []).length) + " active";
       if (tb) tb.innerHTML = (sess || []).map(function (s) {
         return "<tr><td class='dim'>" + esc(s.kind) + (s.provider ? ":" + esc(s.provider) : "") + "</td><td class='dim'>" + esc(s.label || "") + "</td><td class='dim'>expires " + new Date(s.expiresAt).toLocaleDateString() + "</td><td><button class='ghost' data-authrev='" + esc(s.key) + "'>revoke</button></td></tr>";
       }).join("");
@@ -457,11 +555,11 @@
     var def = st.default || {};
     var byId = {}; (st.providers || []).forEach(function (p) { byId[p.id] = p });
     var rows = (st.providers || []).map(function (p, i) {
-      var modelNames = ((p.extra && p.extra.models) || []).slice();
+      var modelNames = ((p.models && p.models.length) ? p.models.map(function (m) { return (m && m.id) ? m.id : String(m) }) : (((p.extra && p.extra.models) || []).slice()));
       if (!modelNames.length && p.modelId) modelNames = [p.modelId];
       return '<tr data-pid="' + esc(p.id) + '">' +
         "<td><input type='text' data-f='name' value='" + esc(p.name) + "' style='width:140px'></td>" +
-        "<td><input type='text' data-f='url' value='" + esc(p.url) + "' style='width:230px'></td>" +
+        "<td><input type='text' data-f='url' value='" + esc(p.baseUrl || "") + "' style='width:230px'></td>" +
         "<td><input type='password' data-f='key' placeholder='" + (p.apiKey ? "set" : "none") + "' style='width:110px'></td>" +
         "<td><select data-f='model' style='min-width:170px'>" + modelNames.map(function (n) { return "<option>" + esc(n) + "</option>" }).join("") + "</select></td>" +
         "<td class='dim' data-f='models'>" + modelNames.length + " known</td>" +
@@ -476,8 +574,33 @@
       '<div class="row"><span style="width:130px" class="dim">self-update</span><label style="display:flex;gap:6px;align-items:center"><input id="allowUp" type="checkbox"' + (st.allowSelfUpdate ? " checked" : "") + "> allow model self-update</label><button class='ghost' id='checkUp'>Check for updates</button><span id=upOut class=dim></span></div>" +
       "<h3 style='margin:16px 0 8px'>Providers</h3><table><tr><th>name</th><th>base url</th><th>api key</th><th>default model</th><th>models</th><th></th></tr><tbody id='provRows'>" + rows + "</tbody></table>" +
       "<div class='row' style='margin-top:12px'><button class='ghost' id='addProv'>+ Add provider</button><button class='primary' id='saveProv'>Save settings</button><span id='setOut' class='dim'></span></div>" +
-      authSectionHtml();
+      authSectionHtml() +
+      voiceSectionHtml();
     loadAuthPanel();
+    loadVoiceCard();
+    var vs = $("#vSave");
+    if (vs) vs.onclick = async function () {
+      var cfg = {
+        asr: { enabled: $("#vAsrOn").checked, url: $("#vAsrUrl").value.trim(), language: $("#vLang").value.trim() || "italian" },
+        tts: { enabled: $("#vTtsOn").checked, url: $("#vTtsUrl").value.trim(), language: $("#vLang").value.trim() || "italian" },
+        realtime: { enabled: !!$("#vRtUrl").value.trim(), url: $("#vRtUrl").value.trim(), voice: $("#vVoice").value },
+        autoSpeak: $("#vAuto").checked
+      };
+      localStorage.setItem("oh.autospeak", cfg.autoSpeak ? "1" : "0");
+      V.autoSpeak = cfg.autoSpeak;
+      var sb = $("#speakBtn"); if (sb) sb.classList.toggle("on", V.autoSpeak);
+      try { await rpc("voice.save", { voice: cfg }); $("#vOut").textContent = "saved"; toast("voice settings saved", "ok") }
+      catch (e) { $("#vOut").textContent = String(e); toast(String(e), "err") }
+    };
+    var vp = $("#vProbe");
+    if (vp) vp.onclick = async function () {
+      $("#vOut").textContent = "probing...";
+      try {
+        var r = await rpc("voice.probe", {});
+        var b = r.batch || {}, rt = r.realtime || {};
+        $("#vOut").textContent = "batch " + (b.ok ? "ok (" + (b.device || "") + ")" : "DOWN") + " · realtime " + (rt.ok ? "ok" : "DOWN");
+      } catch (e) { $("#vOut").textContent = String(e) }
+    };
     function fillModel(sel, names, cur) {
       sel.innerHTML = names.map(function (n) { return "<option>" + esc(n) + "</option>" }).join("") || "<option>(none)</option>";
       if (cur && names.indexOf(cur) >= 0) sel.value = cur;
@@ -485,7 +608,7 @@
     var defProv = $("#defProv");
     function defModels() {
       var p = byId[defProv.value] || {};
-      var names = ((p.extra && p.extra.models) || []).slice();
+      var names = ((p.models && p.models.length) ? p.models.map(function (m) { return (m && m.id) ? m.id : String(m) }) : (((p.extra && p.extra.models) || []).slice()));
       if (!names.length && p.modelId) names = [p.modelId];
       fillModel($("#defModel"), names, def.modelId || (names.length ? names[0] : ""));
     }
@@ -495,7 +618,7 @@
       var id = prompt("provider id (lowercase, unique)", "my-provider"); if (!id) return;
       id = id.trim().toLowerCase().split(/[^a-z0-9-]/).filter(Boolean).join("-");
       if (byId[id]) return toast("id exists", "err");
-      S.settings.providers.push({ id: id, name: id, url: "http://127.0.0.1:8000/v1" });
+      S.settings.providers.push({ id: id, name: id, baseUrl: "http://127.0.0.1:8000/v1", models: [] });
       loadSettings();
     };
     $("[data-pdel]") && $$(".ghost").length; // noop guard
@@ -510,8 +633,8 @@
           var models = await rpc("models.fetch", { providerId: S.settings.providers[i].id });
           var list = (models && models.models ? models.models : models) || [];
           var names = list.map(function (x) { return typeof x === "string" ? x : x.id });
-          S.settings.providers[i].extra = S.settings.providers[i].extra || {};
-          S.settings.providers[i].extra.models = names;
+          var pp = S.settings.providers[i]; var oldm = {}; (pp.models || []).forEach(function (x) { if (x && x.id) oldm[x.id] = x });
+          pp.models = names.map(function (n) { return oldm[n] || { id: n, reasoningEfforts: ["none", "low", "medium", "xhigh"] } }); delete pp.modelId;
           fillModel(tr.querySelector("[data-f=model]"), names, names[0]);
           tr.querySelector("[data-f=models]").textContent = names.length + " fetched";
         } catch (e) { toast(String(e), "err"); tr.querySelector("[data-f=models]").textContent = "failed" }
@@ -529,11 +652,17 @@
       $$("[data-pid]").forEach(function (tr, idx) {
         var p = S.settings.providers[idx];
         var v = function (f) { return tr.querySelector("[data-f=" + f + "]").value };
-        p.name = v("name") || p.name; p.url = v("url") || p.url;
+        p.name = v("name") || p.name;
+        var bu = v("url"); if (bu) p.baseUrl = bu;
+        delete p.url;
         var k = v("key"); if (k && k.indexOf("*") < 0) p.apiKey = k;
-        var m = v("model"); if (m) p.modelId = m;
         var sel = tr.querySelector("[data-f=model]");
-        if (sel.options.length > 1) { p.extra = p.extra || {}; p.extra.models = [].slice.call(sel.options).map(function (o) { return o.value }) }
+        var names = (sel && sel.options.length) ? [].slice.call(sel.options).map(function (o) { return o.value }) : [];
+        if (names.length) {
+          var oldm2 = {}; (p.models || []).forEach(function (x) { if (x && x.id) oldm2[x.id] = x });
+          p.models = names.map(function (n) { return oldm2[n] || { id: n, reasoningEfforts: ["none", "low", "medium", "xhigh"] } });
+          delete p.modelId;
+        }
       });
       S.settings.default = { providerId: defProv.value, modelId: $("#defModel").value, effort: $("#defEffort").value };
       S.settings.allowSelfUpdate = $("#allowUp").checked;
@@ -619,6 +748,19 @@
       try { var s = await rpc("sessions.create", { title: "chat " + fmtT(Date.now()) }); await loadSessionsCount(); await openChat(s.id); showView("chat") } catch (e) { toast(String(e), "err") }
     };
     $("#sendBtn").onclick = sendChat;
+    var mb2 = $("#micBtn"); if (mb2) mb2.onclick = function () { micToggle() };
+    var sb2 = $("#speakBtn");
+    if (sb2) {
+      sb2.classList.toggle("on", V.autoSpeak);
+      sb2.onclick = function () {
+        V.autoSpeak = !V.autoSpeak;
+        localStorage.setItem("oh.autospeak", V.autoSpeak ? "1" : "0");
+        sb2.classList.toggle("on", V.autoSpeak);
+        sb2.title = V.autoSpeak ? "auto-speak replies: on" : "auto-speak replies: off";
+        toast("auto-speak " + (V.autoSpeak ? "on" : "off"), "ok");
+      };
+    }
+    if (window.OH.onEvent) window.OH.onEvent("voice.settings", function () { loadVoiceCard(); });
     $("#chatInput").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat() } });
     $("#chatInput").addEventListener("input", function () { this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 200) + "px" });
     $("#paletteBtn").onclick = palette;

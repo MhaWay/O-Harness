@@ -18,6 +18,7 @@ const UI_DIR = new URL("./ui/", import.meta.url);
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
+import { VoiceStore, voiceTts, voiceAsr, voiceProbe, type VoiceConfig } from "./voice.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { resolveTls } from "./tls.ts";
 import { execFile } from "node:child_process";
@@ -92,6 +93,7 @@ export class Gateway {
   chat: ChatRuntime;
   pairing: PairingStore;
   auth: AuthStore;
+  voice: VoiceStore;
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
   tools: ToolBroker;
@@ -100,6 +102,7 @@ export class Gateway {
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
   #wsCtx = new Map<WebSocket, AuthCtx>();
+  #wssVoice = new WebSocketServer({ noServer: true });
   #deviceConns = new Map<string, WebSocket>();
   #dataDir = dataDirOf();
   #pairHits = new Map<string, { n: number; resetAt: number }>();
@@ -114,6 +117,7 @@ export class Gateway {
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
     this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
+    this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
     this.settings = new SettingsStore(dataDirOf(dataDir));
     this.consolidator = new MemoryConsolidator(this.memory, this.settings);
     this.grants = new GrantsStore(dataDirOf(dataDir));
@@ -312,6 +316,13 @@ export class Gateway {
       incoming.providers = incoming.providers.map((inc) => {
         const old = byId.get(inc.id);
         if (inc.apiKey === "***set***" && old) inc.apiKey = old.apiKey;
+        const any = inc as unknown as Record<string, unknown>;
+        if (!any.baseUrl && typeof any.url === "string") { any.baseUrl = any.url; delete any.url; }
+        if (!Array.isArray(inc.models)) {
+          const ex = any.extra as Record<string, unknown> | undefined;
+          if (ex && Array.isArray(ex.models)) inc.models = (ex.models as string[]).map((id) => ({ id }));
+          else inc.models = [];
+        }
         return inc;
       });
       this.settings.save(incoming);
@@ -373,6 +384,27 @@ export class Gateway {
       this.config.tokenEnabled = cur.tokenEnabled;
       return { ok: true, tokenEnabled: cur.tokenEnabled };
     });
+    // --- voice (LFM3 batch TTS/ASR + realtime relay) ---
+    this.rpc.set(Methods.VoiceGet, () => this.voice.get());
+    this.rpc.set(Methods.VoiceSave, (p) => {
+      const saved = this.voice.save((p ?? {}) as Partial<VoiceConfig>);
+      this.#broadcastEvent("voice.settings", saved);
+      return saved;
+    });
+    this.rpc.set(Methods.VoiceSpeak, async (p) => {
+      const text = String(p?.text ?? "").trim();
+      if (!text) throw new Error("voice.speak: text required");
+      const wav = await voiceTts(this.voice.get().tts.url, text);
+      return { ok: true, format: "wav", audio: Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength).toString("base64") };
+    });
+    this.rpc.set(Methods.VoiceAsr, async (p) => {
+      const audio = String(p?.audio ?? "");
+      if (!audio) throw new Error("voice.asr: audio (base64) required");
+      const cfg = this.voice.get();
+      const text = await voiceAsr(cfg.asr.url, audio, String(p?.language ?? cfg.asr.language));
+      return { text };
+    });
+    this.rpc.set(Methods.VoiceProbe, () => voiceProbe(this.voice.get()));
     // --- device-offered tools + authorization grants ---
     this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {
       const deviceId = ctx.deviceId ?? "local"; // registered device socket; admin callers pass deviceId param
@@ -441,6 +473,16 @@ export class Gateway {
         } catch {
           res.writeHead(404); res.end("not found");
         }
+        return;
+      }
+      if (url.pathname === "/api/voice/tts") {
+        const vctx = this.#checkAuth(req);
+        if (!vctx) { res.writeHead(401); res.end(); return; }
+        const text = url.searchParams.get("text") ?? "";
+        if (!text.trim()) { res.writeHead(400); res.end("text required"); return; }
+        voiceTts(this.voice.get().tts.url, text)
+          .then((wav) => { res.writeHead(200, { "content-type": "audio/wav", "cache-control": "no-store" }); res.end(Buffer.from(wav.buffer, wav.byteOffset, wav.byteLength)); })
+          .catch((e) => { if (!res.headersSent) res.writeHead(500); res.end(String(e)); });
         return;
       }
       if (url.pathname === "/auth/info") {
@@ -656,10 +698,32 @@ export class Gateway {
       this.#wssNode.handleUpgrade(req, socket, head, (ws) => { this.#wsCtx.set(ws, auth); this.#onNodeSocket(ws); });
     } else if (url.pathname === "/api") {
       this.#wssClient.handleUpgrade(req, socket, head, (ws) => { this.#wsCtx.set(ws, auth); this.#onClientSocket(ws); });
+    } else if (url.pathname === "/voice") {
+      this.#wssVoice.handleUpgrade(req, socket, head, (ws) => { this.#voiceRelay(ws); });
     } else {
       socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       socket.destroy();
     }
+  }
+
+  /** Bidirectional pipe between browser and the LFM3 realtime server. */
+  #voiceRelay(ws: WebSocket) {
+    const cfg = this.voice.get();
+    if (!cfg.realtime.enabled) {
+      try { ws.close(1013, "realtime voice disabled"); } catch { /* noop */ }
+      return;
+    }
+    let upstream: WebSocket;
+    try { upstream = new WebSocket(cfg.realtime.url); } catch { try { ws.close(1011, "bad realtime url"); } catch { /* noop */ } return; }
+    let closed = false;
+    const done = () => { if (closed) return; closed = true; try { ws.close(); } catch { /* noop */ } try { upstream.close(); } catch { /* noop */ } };
+    ws.on("message", (raw: Buffer, isBinary: boolean) => { if (upstream.readyState === WebSocket.OPEN) upstream.send(raw, { binary: isBinary }); });
+    ws.on("close", done);
+    ws.on("error", done);
+    upstream.on("message", (raw: Buffer, isBinary: boolean) => { if (ws.readyState === WebSocket.OPEN) ws.send(raw, { binary: isBinary }); });
+    upstream.on("close", done);
+    upstream.on("error", () => { try { ws.close(1011, "realtime server error"); } catch { /* noop */ } done(); });
+    setTimeout(() => { if (upstream.readyState !== WebSocket.OPEN) { try { ws.close(1013, "realtime server unreachable"); } catch { /* noop */ } done(); } }, 4000);
   }
 
   #onNodeSocket(ws: WebSocket) {

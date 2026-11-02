@@ -58,6 +58,11 @@ export const Methods = {
   AuthOAuthRemove: "auth.oauth.remove",
   AuthStartOAuth: "auth.oauth.start",
   AuthSetTokenLogin: "auth.setTokenLogin",
+  VoiceGet: "voice.get",
+  VoiceSave: "voice.save",
+  VoiceSpeak: "voice.speak",
+  VoiceAsr: "voice.asr",
+  VoiceProbe: "voice.probe",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

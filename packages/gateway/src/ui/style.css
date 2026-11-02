@@ -57,6 +57,9 @@ main{display:flex;flex-direction:column;min-width:0}
 #chatInput{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px 12px;font:inherit;resize:none;max-height:200px}
 #chatInput:focus{outline:none;border-color:var(--acc)}
 .composer-tools{display:flex;flex-direction:column;gap:6px}
+#micBtn.rec{background:#e0483e;color:#fff;border-color:#e0483e}
+#speakBtn.on{background:#2f8f5b;color:#fff;border-color:#2f8f5b}
+
 button.primary{background:var(--acc);border:0;color:#fff;border-radius:10px;padding:9px 18px;font-weight:600;cursor:pointer}
 button.primary:hover{filter:brightness(1.1)}
 button.primary:disabled{opacity:.5;cursor:default}
