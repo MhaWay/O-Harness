@@ -113,8 +113,10 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 24. ✅ Testing: unit suites for auth (scrypt+sessions+cookies), voice config, tool broker (offer/grants/ask/approve/deny/timeout), settings store — 31 tests, all offline
 25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up### Logs (error tracking + model-assisted resolution)
 26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minions
-  27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
-  29. ✅ Mobile /m redesign — chat-first PWA-style page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools): `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
+27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
+28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
+29. ✅ Mobile /m redesign — chat-first page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools)
+30. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
