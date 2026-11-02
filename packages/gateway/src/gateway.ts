@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { createServer as createSecureServer } from "node:https";
 import { WebSocketServer, WebSocket } from "ws";
 import { mkdirSync, readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
@@ -558,8 +559,18 @@ export class Gateway {
         try {
           const body = readFileSync(new URL(name, UI_DIR), "utf8");
           const ext = name.slice(name.lastIndexOf("."));
-          res.writeHead(200, { "content-type": (mime[ext] ?? "text/plain") + "; charset=utf-8", "cache-control": "no-store" });
-          res.end(body);
+          const etag = "W/\"" + createHash("sha1").update(body).digest("hex").slice(0, 20) + "\"";
+          const inm = req.headers["if-none-match"];
+          if (inm === etag) { res.writeHead(304); res.end(); return; }
+          const wantsGzip = /gzip/.test(String(req.headers["accept-encoding"] ?? ""));
+          const payload = wantsGzip ? gzipSync(Buffer.from(body, "utf8")) : body;
+          res.writeHead(200, {
+            "content-type": (mime[ext] ?? "text/plain") + "; charset=utf-8",
+            etag,
+            "cache-control": "no-cache",
+            ...(wantsGzip ? { "content-encoding": "gzip" } : {}),
+          });
+          res.end(payload);
         } catch {
           res.writeHead(404); res.end("not found");
         }
