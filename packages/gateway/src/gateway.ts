@@ -110,13 +110,13 @@ export class Gateway {
   #server: Server | null = null;
   #clientSockets = new Set<WebSocket>();
   #wsCtx = new Map<WebSocket, AuthCtx>();
-  #wssVoice = new WebSocketServer({ noServer: true });
+  #wssVoice = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
   #deviceConns = new Map<string, WebSocket>();
   #dataDir = dataDirOf();
   #pairHits = new Map<string, { n: number; resetAt: number }>();
   #pending = new Map<string, Pending>();
-  #wssNode = new WebSocketServer({ noServer: true });
-  #wssClient = new WebSocketServer({ noServer: true });
+  #wssNode = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  #wssClient = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
 
   constructor(config: Partial<GatewayConfig> = {}, dataDir?: string) {
     const base = loadConfig(dataDir);
@@ -481,6 +481,18 @@ export class Gateway {
     const tlsMat = resolveTls(this.config.tls, this.#dataDir);
     if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
     const handler = (req: IncomingMessage, res: ServerResponse) => {
+      // Baseline security headers on every response. The UI, mobile and legacy pages all use
+      // inline scripts, so script-src must keep 'unsafe-inline'; everything else is locked down.
+      // All UI assets are same-origin — cross-origin script execution is blocked by frame-ancestors
+      // and object-src. An inline-script hash policy is a known follow-up (tracked in security notes).
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Referrer-Policy", "no-referrer");
+      res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+      const bodyChunks: Buffer[] = [];
+      let bodyLen = 0;
+      if (Number(req.headers["content-length"] ?? 0) > 1_048_576) { res.writeHead(413, { "content-type": "application/json", connection: "close" }); res.end(JSON.stringify({ ok: false, error: "body too large" })); if (req.socket) req.socket.destroySoon(); return; }
+      req.on("data", (c: Buffer) => { bodyLen += c.length; if (bodyLen > 1_048_576) { if (!res.headersSent) { res.writeHead(413, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, error: "body too large" })); } if (res.socket) res.socket.end(); else req.destroy(); } else { bodyChunks.push(c); } });
       const url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "local"));
       if (url.pathname === "/" || url.pathname === "/index.html") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
