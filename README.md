@@ -105,7 +105,7 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 19. ✅ Error tracking & logs: structured LogStore (ring + daily JSONL), logs.tail/stats/resolve RPC+CLI, GUI Logs view with model-assisted analysis
 20. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
 21. ✅ Monitoring & alerts: service probes (models/http/ws) + fired/resolved alerts with ack, Overview panel (services table + open alerts + Re-check now), `o-h monitor ...`
-18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
+22. ✅ CI/CD: GitHub Actions (pnpm + Node 24, `pnpm test` on push/PR to main)18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
 
 
 ### Logs (error tracking + model-assisted resolution)
