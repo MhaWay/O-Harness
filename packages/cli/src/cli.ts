@@ -388,6 +388,27 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("unknown voice subcommand: " + sub + " (get|save|say|asr|probe)");
   }
 
+  if (cmd === "logs") {
+    const sub = rest[0];
+    if (sub === "tail" || sub === undefined) {
+      const level = flag(rest, "level"); const moduleF = flag(rest, "module"); const qF = flag(rest, "q");
+      const r = await callOnce("logs.tail", { limit: flag(rest, "limit") ? Number(flag(rest, "limit")) : 100, ...(level ? { level } : {}), ...(moduleF ? { module: moduleF } : {}), ...(qF ? { q: qF } : {}) }, port) as any;
+      for (const e of [...r.entries].reverse()) console.log(new Date(e.ts).toISOString() + " " + e.level.toUpperCase().padEnd(5) + " " + e.module + "  " + e.msg + (e.meta ? " " + JSON.stringify(e.meta) : ""));
+      console.log("(" + r.total + " matching, showing " + Math.min(r.entries.length, 100) + ")");
+      return;
+    }
+    if (sub === "stats") { const r = await callOnce("logs.stats", undefined, port) as any; console.log(JSON.stringify(r, null, 2)); return; }
+    if (sub === "resolve") {
+      const qF = rest.slice(1).filter((x: string) => !x.startsWith("--")).join(" ");
+      const level = flag(rest, "level") ?? "warn";
+      console.log("asking the model to analyze logs (level=" + level + ")...");
+      const r = await callOnce("logs.resolve", { q: qF || undefined, level }, port) as any;
+      console.log("\n" + r.analysis);
+      return;
+    }
+    throw new Error("unknown logs subcommand: " + sub + " (tail|stats|resolve)");
+  }
+
   if (cmd === "pair") {
     const sub = rest[0];
     if (sub === "create") {

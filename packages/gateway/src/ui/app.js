@@ -90,9 +90,41 @@
   var views = {
     overview: loadOverview, sessions: loadSessions, minions: loadMinions,
     scheduler: loadScheduler, memory: loadMemory, tools: loadTools,
-    devices: loadDevices, settings: loadSettings, chat: null
+    devices: loadDevices, settings: loadSettings, logs: loadLogs, chat: null
   };
-  function showView(name) {
+  async function loadLogs() {
+  var host = $("#v-logs");
+  if (S.logsQ === undefined) S.logsQ = "";
+  host.innerHTML = "<h2 class='sec'>Logs</h2>" +
+    "<div class='row'><input id='logsQ' placeholder='search... (q)' style='flex:1' value='" + esc(S.logsQ) + "'>" +
+    "<select id='logsLevel'><option value=''>all levels</option><option value='debug'>debug</option><option value='info'>info</option><option value='warn'>warn</option><option value='error'>error</option></select>" +
+    "<button class='ghost' id='logsGo'>Apply</button><button class='ghost' id='logsResolve'>Ask model to analyze</button><span id='logsOut' class='dim'></span></div>" +
+    "<div id='logsStats' class='dim' style='margin:6px 0'></div>" +
+    "<pre id='logsList' class='loglist'></pre>";
+  var sel = $("#logsLevel"); if (S.logsLevel) sel.value = S.logsLevel;
+  var draw = async function () {
+    try {
+      var r = await OH.rpc("logs.tail", { limit: 200, ...(S.logsQ ? { q: S.logsQ } : {}), ...(S.logsLevel ? { level: S.logsLevel } : {}) });
+      $("#logsList").innerHTML = r.entries.map(function (e) { return esc(new Date(e.ts).toISOString().slice(0, 19).replace("T", " ")) + " " + e.level.toUpperCase() + " [" + e.module + "] " + e.msg + (e.meta ? " " + JSON.stringify(e.meta) : "") }).join("\n") || "(empty)";
+      var st = await OH.rpc("logs.stats", undefined);
+      $("#logsStats").textContent = st.errors24h + " errors \u00b7 " + st.warns24h + " warnings (24h)" + (st.lastError ? " \u00b7 last: " + st.lastError.module + ": " + String(st.lastError.msg).slice(0, 90) : "") + " \u00b7 " + st.files + " log files";
+    } catch (e) { $("#logsList").textContent = "error: " + e.message }
+  };
+  $("#logsGo").onclick = function () { S.logsQ = $("#logsQ").value; S.logsLevel = $("#logsLevel").value; draw() };
+  $("#logsQ").onkeydown = function (ev) { if (ev.key === "Enter") { $("#logsGo").click() } };
+  $("#logsResolve").onclick = async function () {
+    $("#logsOut").textContent = "analyzing with the model (up to ~1 min)...";
+    try { var r = await OH.rpc("logs.resolve", { q: S.logsQ || undefined, level: S.logsLevel || "warn" }); $("#logsOut").textContent = ""; toast("analysis done"); S.logsAnalysis = r.analysis; showLogsAnalysis(); } catch (e) { $("#logsOut").textContent = "error: " + e.message }
+  };
+  draw();
+}
+function showLogsAnalysis() {
+  var old = document.querySelector("#logsAnalysis"); if (old) old.remove();
+  var d = document.createElement("div"); d.id = "logsAnalysis"; d.className = "card"; d.style.marginTop = "10px";
+  d.innerHTML = "<h3>Model analysis</h3><div class='md'>" + md(S.logsAnalysis || "") + "</div>";
+  var host = $("#v-logs"); if (host) host.appendChild(d);
+}
+function showView(name) {
     S.view = name;
     $$(".nav button").forEach(function (b) { b.classList.toggle("on", b.dataset.view === name) });
     $$(".view").forEach(function (v) { v.classList.toggle("on", v.id === "v-" + name) });

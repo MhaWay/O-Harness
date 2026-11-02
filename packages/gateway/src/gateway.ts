@@ -14,6 +14,8 @@ import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
 import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoSub, COOKIE_NAME, type OAuthProviderCfg } from "./auth.ts";
+import { LogStore } from "./log.ts";
+import { logToolDefs, resolveLogs } from "./logtools.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
 import { MOBILE_HTML } from "./mobile.ts";
 import { AgentRuntime } from "./agents.ts";
@@ -86,6 +88,7 @@ export class Gateway {
   registry = new Registry();
   rpc = new RpcRouter();
   plugins = new PluginHost();
+  log: LogStore;
   sessions: SessionsStore;
   memory: MemoryStore;
   settings: SettingsStore;
@@ -116,6 +119,7 @@ export class Gateway {
     this.sessions = new SessionsStore(dataDirOf(dataDir));
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
+    this.log = new LogStore(join(dataDirOf(dataDir), "logs"));
     this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
     this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
     this.settings = new SettingsStore(dataDirOf(dataDir));
@@ -133,7 +137,10 @@ export class Gateway {
       callDevice: (deviceId, method, params) => this.#callDevice(deviceId, method, params ?? {}),
       listDeviceTools: () => this.tools.list(),
       callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester ?? "minion"),
-      onChange: (m) => this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error }),
+      onChange: (m) => {
+        if (m.status === "error") this.log.error("agents", "minion " + m.id + " failed: " + String(m.error ?? ""));
+        this.#broadcastEvent("agents.changed", { id: m.id, status: m.status, turnsUsed: m.turnsUsed, result: m.result, error: m.error });
+      },
       storeDir: join(dataDirOf(dataDir), "minions"),
     });
     this.chat = new ChatRuntime({
@@ -328,6 +335,9 @@ export class Gateway {
       this.settings.save(incoming);
       return { ok: true };
     });
+    this.rpc.set(Methods.LogsTail, (p) => this.log.tail({ limit: p?.limit ? Number(p.limit) : 100, level: p?.level, module: p?.module, q: p?.q }));
+    this.rpc.set(Methods.LogsStats, () => this.log.stats());
+    this.rpc.set(Methods.LogsResolve, async (p) => await resolveLogs(this.log, chatOnce, this.settings, { q: p?.q ? String(p.q) : undefined, level: p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined }));
     this.rpc.set(Methods.MemoryConsolidate, (p) => this.consolidator.consolidate({ subject: p?.subject ? String(p.subject) : undefined, dryRun: Boolean(p?.dryRun) }));
     this.rpc.set(Methods.PairingCreate, (p) => {
       const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });
@@ -447,6 +457,7 @@ export class Gateway {
       this.plugins.register(plugin);
     }
     await this.plugins.setupAll(this.#api());
+    this.log.info("gateway", "started", { port: this.config.port, host: this.config.host });
 
     const tlsMat = resolveTls(this.config.tls, this.#dataDir);
     if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
@@ -513,6 +524,7 @@ export class Gateway {
             return;
           }
           if (!this.auth.verify(pw)) {
+            this.log.warn("auth", "failed login", { ip });
             res.writeHead(401, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "wrong password" }));
             return;
@@ -641,6 +653,7 @@ export class Gateway {
     await this.plugins.teardownAll();
     for (const d of this.registry.all()) { if (d.conn) { try { (d.conn as WebSocket).close(); } catch { /* noop */ } } }
     for (const ws of [...this.#clientSockets]) { try { ws.close(); } catch { /* noop */ } }
+    this.log.info("gateway", "stopped");
     const s = this.#server;
     this.#server = null;
     if (s) await new Promise<void>((r) => s.close(() => r()));
@@ -837,6 +850,7 @@ export class Gateway {
       this.#callScoped(String(msg.method), msg.params, c).then((result) => {
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, result }));
       }).catch((err) => {
+        this.log.warn("rpc", String(msg.method) + " failed: " + (err instanceof Error ? err.message : String(err)));
         ws.send(encode({ type: Msg.RpcRes, id: msg.id, error: err instanceof Error ? err.message : String(err) }));
       });
     });

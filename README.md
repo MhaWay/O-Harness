@@ -102,9 +102,16 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 15. ✅ Context management (chat) — bounded verbatim tail + rolling model-summarized history (Letta/dsh-style), memory recall injected every turn; `o-h say` keeps long conversations cheap
 16. Next: npm publish (deferred)
 17. ✅: new hybrid UI - chat-first shell, static assets, command palette, responsive hamburger, legacy tab UI at /legacy
-19. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
+19. ✅ Error tracking & logs: structured LogStore (ring + daily JSONL), logs.tail/stats/resolve RPC+CLI, GUI Logs view with model-assisted analysis
+20. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
 18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
 
+
+### Logs (error tracking + model-assisted resolution)
+Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
+daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
+`o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
+The GUI Logs view has search, level filter, 24h stats and an “Ask model to analyze” button.
 
 ### Voice (dictation + text-to-speech)
 O-Harness integrates local speech models through an HTTP adapter (LFM3 batch API exposed on port 8023:
