@@ -58,6 +58,7 @@ export async function main(args: string[]): Promise<void> {
       "",
       "gateway start [--port p] [--host h] [--tls auto|off]   start gateway (GUI http://host:port/, mobile /m)",
       "instances                                            live gateway instances sharing this data dir (duplicate detection)",
+      "backup run|list|restore <zip> [--dry-run]             automatic daily ZIP backup of the data dir (keep newest)",
       "token                                              print admin token",
       "devices                                             list connected devices (+transport)",
       "exec [--device id] <command>                        run command on a device (local default)",
@@ -461,6 +462,28 @@ export async function main(args: string[]): Promise<void> {
       return;
     }
     throw new Error("unknown logs subcommand: " + sub + " (tail|stats|resolve)");
+  }
+
+  if (cmd === "backup") {
+    const sub = rest[0];
+    if (sub === "run") {
+      const keep = flag(rest, "keep");
+      const r = await callOnce("backup.run", keep ? { keep: Number(keep) } : {}, port);
+      console.log(r.file + "  (" + r.files + " files, " + Math.round((r.bytes / 1024 / 1024) * 10) / 10 + " MB)");
+    } else if (sub === "list") {
+      const r = await callOnce("backup.list", {}, port);
+      console.log("dir: " + r.dir);
+      if (!r.backups.length) console.log("(no backups yet — they run automatically about 1h after start, then daily)");
+      for (const b of r.backups) console.log(b.name.padEnd(40) + String(Math.round(b.bytes / 1024)).padStart(8) + " KB");
+    } else if (sub === "restore") {
+      const file = rest[1];
+      if (!file) { console.log("usage: backup restore <zip-file> [--dry-run]"); return; }
+      const r = await callOnce("backup.restore", { file, dryRun: rest.includes("--dry-run") }, port);
+      console.log((r.dryRun ? "dry-run: would restore " : "restored ") + r.restored + " files. Restart the gateway to reload stores cleanly.");
+    } else {
+      console.log("subcommands: run | list | restore <zip> [--dry-run]");
+    }
+    return;
   }
 
   if (cmd === "instances") {

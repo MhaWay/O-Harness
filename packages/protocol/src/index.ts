@@ -75,6 +75,9 @@ export const Methods = {
   CacheClear: "cache.clear",
   AlertList: "alerts.list",
   AlertAck: "alerts.ack",
+  BackupRun: "backup.run",
+  BackupList: "backup.list",
+  BackupRestore: "backup.restore",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

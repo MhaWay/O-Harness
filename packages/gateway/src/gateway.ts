@@ -14,6 +14,7 @@ import { ensureOverlay } from "./overlay.ts";
 import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, type Effort } from "./models.ts";
 import { WEBUI_HTML } from "./webui.ts";
 import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoSub, COOKIE_NAME, type OAuthProviderCfg } from "./auth.ts";
+import { runBackup, listBackups, restoreBackup } from "./backup.ts";
 import { LogStore } from "./log.ts";
 import { logToolDefs, resolveLogs } from "./logtools.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
@@ -44,6 +45,9 @@ export interface GatewayConfig {
   tls?: "auto" | "off";
   /** Raw bootstrap token stays usable (default true). Set false to force password/oauth logins. */
   tokenEnabled?: boolean;
+  /** Housekeeping: backups (default on, daily) and log pruning. */
+  backup?: { enabled?: boolean; everyHours?: number; keep?: number };
+  logsKeepDays?: number;
 }
 
 export const DEFAULT_PORT = 8710;
@@ -63,7 +67,7 @@ export function loadConfig(dataDir?: string): { port: number; token: string; plu
   const file = configFilePath(dataDir);
   try {
     const j = JSON.parse(readFileSync(file, "utf-8"));
-    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.tokenEnabled === false ? { tokenEnabled: false } : {}), ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}), ...(j.tls ? { tls: String(j.tls) as "auto" | "off" } : {}) };
+    if (typeof j.token === "string") return { port: Number(j.port) || DEFAULT_PORT, token: j.token, plugins: Array.isArray(j.plugins) ? j.plugins : [], ...(j.tokenEnabled === false ? { tokenEnabled: false } : {}), ...(j.overlay ? { overlay: String(j.overlay) } : {}), ...(j.overlayAuthKey ? { overlayAuthKey: String(j.overlayAuthKey) } : {}), ...(j.overlayNetId ? { overlayNetId: String(j.overlayNetId) } : {}), ...(j.tls ? { tls: String(j.tls) as "auto" | "off" } : {}), ...(j.backup ? { backup: j.backup } : {}), ...(typeof j.logsKeepDays === "number" ? { logsKeepDays: j.logsKeepDays } : {}) };
   } catch { /* first run */ }
   const cfg = { port: DEFAULT_PORT, token: randomBytes(16).toString("hex"), plugins: [] as string[] };
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
@@ -177,6 +181,8 @@ export class Gateway {
       ...(config.overlayAuthKey ?? base.overlayAuthKey ? { overlayAuthKey: (config.overlayAuthKey ?? base.overlayAuthKey) as string } : {}),
       ...(config.overlayNetId ?? base.overlayNetId ? { overlayNetId: (config.overlayNetId ?? base.overlayNetId) as string } : {}),
       ...(config.tls ?? base.tls ? { tls: (config.tls ?? base.tls) as "auto" | "off" } : {}),
+      ...((config.backup ?? (base as { backup?: GatewayConfig["backup"] }).backup) ? { backup: (config.backup ?? (base as { backup?: GatewayConfig["backup"] }).backup) as GatewayConfig["backup"] } : {}),
+      ...(config.logsKeepDays ?? (base as { logsKeepDays?: number }).logsKeepDays ? { logsKeepDays: (config.logsKeepDays ?? (base as { logsKeepDays?: number }).logsKeepDays) as number } : {}),
     };
   }
 
@@ -437,6 +443,22 @@ export class Gateway {
     this.rpc.set(Methods.MonitorEnable, (p) => ({ enabled: this.monitor.setEnabled(String(p?.id ?? ""), Boolean(p?.enabled)) }));
     this.rpc.set(Methods.AlertList, () => this.monitor.alerts.slice(0, 50));
     this.rpc.set(Methods.AlertAck, (p) => ({ acked: this.monitor.ackAlert(String(p?.id ?? "")) }));
+    this.rpc.set(Methods.BackupRun, (p) => {
+      const res = runBackup(this.#dataDir, { keep: Number(p?.keep) || undefined });
+      this.#broadcastEvent("backup.done", { file: res.file, bytes: res.bytes });
+      return res;
+    });
+    this.rpc.set(Methods.BackupList, () => ({ dir: join(this.#dataDir, "backups"), backups: listBackups(this.#dataDir) }));
+    this.rpc.set(Methods.BackupRestore, (p) => {
+      if (this.instances && this.instances.list().some((o) => o.pid !== process.pid)) throw new Error("restore requires a single gateway instance — stop the others first");
+      const live = this.instances ? this.instances.list().length : 0;
+      void live;
+      const file = String(p?.file ?? "");
+      if (!file) throw new Error("restore needs { file: path }");
+      this.log.warn("backup", "restoring from " + file + " — restart required for stores to reload cleanly");
+      return { ...restoreBackup(this.#dataDir, file, { dryRun: Boolean(p?.dryRun) }), restartRequired: true };
+    });
+
     // --- device-offered tools + authorization grants ---
     this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {
       const deviceId = ctx.deviceId ?? "local"; // registered device socket; admin callers pass deviceId param
@@ -488,6 +510,8 @@ export class Gateway {
       this.#warnedOthers = true;
       console.warn("WARNING: " + msg);
     }
+
+    this.#startHousekeeping();
 
     const tlsMat = resolveTls(this.config.tls, this.#dataDir);
     if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
@@ -701,6 +725,36 @@ export class Gateway {
     const v = this.voice.get();
     if (v?.tts?.url) this.monitor.addService("Voice batch (LFM3)", "http", v.tts.url + "/health");
     this.monitor.save();
+  }
+
+  #houseTimer: ReturnType<typeof setTimeout> | null = null;
+  #backupInFlight = false;
+
+  /** Periodic housekeeping: prune old logs, then a data-dir backup (keeps N newest). */
+  #startHousekeeping() {
+    const run = () => {
+      if (this.#backupInFlight) return;
+      this.#backupInFlight = true;
+      try {
+        const days = this.config.logsKeepDays ?? 0;
+        if (days > 0) { const n = this.log.prune(days); if (n) this.log.info("housekeeping", "pruned " + n + " log file(s) older than " + days + " days"); }
+        const bk = this.config.backup;
+        if (!bk || bk.enabled !== false) {
+          const res = runBackup(this.#dataDir, { keep: bk.keep ?? 14 });
+          this.log.info("housekeeping", "backup " + res.files + " files -> " + res.file + " (" + res.bytes + " bytes)");
+          this.#broadcastEvent("backup.done", { file: res.file, bytes: res.bytes });
+        }
+      } catch (err) {
+        this.log.warn("housekeeping", "housekeeping failed: " + String((err as Error).message ?? err));
+      } finally {
+        this.#backupInFlight = false;
+      }
+    };
+    if (this.#houseTimer) clearTimeout(this.#houseTimer);
+    const every = Math.max(1, this.config.backup?.everyHours ?? 24) * 3600_000;
+    const tick = () => { run(); this.#houseTimer = setTimeout(tick, every); this.#houseTimer.unref(); };
+    this.#houseTimer = setTimeout(tick, 3600_000);
+    this.#houseTimer.unref();
   }
 
   async stop() {

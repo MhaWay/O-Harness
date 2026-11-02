@@ -592,6 +592,23 @@ function showView(name) {
         toast("oauth provider saved", "ok");
       }, "save");
   }
+  function backupSectionHtml() {
+    return '<h2>Backups</h2><div class="card"><p class="dim">Automatic encrypted-at-rest data-dir snapshots (~1h after boot, then daily). Restore needs a gateway restart.</p><div class="row"><button class="ghost" id="bkRun">Back up now</button><button class="ghost" id="bkRefresh">Refresh</button><span id="bkOut" class="dim"></span></div><table><tbody id="bkRows"></tbody></table></div>';
+  }
+  async function loadBackupPanel() {
+    try {
+      var r = await rpc("backup.list", {});
+      var tb = $("#bkRows");
+      if (!tb) return;
+      if (!r.backups.length) { tb.innerHTML = '<tr><td class="dim">no backups yet</td></tr>'; return; }
+      tb.innerHTML = r.backups.map(function (b) { return '<tr><td>' + esc(b.name) + '</td><td class="dim">' + Math.round(b.bytes / 1024) + ' KB</td><td class="dim">' + fmtDT(b.mtime) + '</td></tr>'; }).join("");
+    } catch (e) { /* ignore */ }
+    var rb = $("#bkRun");
+    if (rb) rb.onclick = function () { rpc("backup.run", {}).then(function (res) { toast("backup ok (" + res.files + " files)", "ok"); loadBackupPanel(); }); };
+    var rf = $("#bkRefresh");
+    if (rf) rf.onclick = loadBackupPanel;
+  }
+
   function cacheSectionHtml() {
     return '<h3 style="margin:16px 0 8px">Model cache</h3><div class="row"><span id="cacheOut" class="dim">loading...</span><button class="ghost" id="cacheClear">Clear cache</button></div>';
   }
@@ -629,10 +646,11 @@ function showView(name) {
       "<h3 style='margin:16px 0 8px'>Providers</h3><table><tr><th>name</th><th>base url</th><th>api key</th><th>default model</th><th>models</th><th></th></tr><tbody id='provRows'>" + rows + "</tbody></table>" +
       "<div class='row' style='margin-top:12px'><button class='ghost' id='addProv'>+ Add provider</button><button class='primary' id='saveProv'>Save settings</button><span id='setOut' class='dim'></span></div>" +
       authSectionHtml() +
-      voiceSectionHtml() + cacheSectionHtml();
+      voiceSectionHtml() + cacheSectionHtml() + backupSectionHtml();
     loadAuthPanel();
     loadVoiceCard();
     loadCachePanel();
+    loadBackupPanel();
     var vs = $("#vSave");
     if (vs) vs.onclick = async function () {
       var cfg = {

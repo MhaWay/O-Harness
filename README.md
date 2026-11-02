@@ -118,7 +118,8 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
 28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
 29. ✅ Mobile /m redesign — chat-first page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools)
-30. Next: npm publish (deferred by user)
+30. ✅ Backups: automatic daily ZIP snapshots of the data dir (atomic, prune-to-keep), manual run/list/restore via RPC+CLI+Settings card
+31. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
@@ -182,6 +183,21 @@ chat with the assistant (voice dictation via the mic button, replies spoken when
 minion dispatch + live status, memory search, an approvals tray for tool-use prompts raised against the
 phone's own tools, and an unpair button. The phone's offered tools (device.info, notes.*, calendar.*) execute
 locally in the browser — phone data never leaves the device without approval.
+
+### Backups
+The gateway snapshots its whole data dir (sessions, memory, settings, auth, pairing, grants, voice,
+scheduler, monitor, logs, tls material) into a dependency-free ZIP under `dataDir/backups/`, first about
+1h after boot and then daily. The newest `keep` archives survive; the archive format is plain ZIP, so any
+tool can open it — no O-Harness needed to read a backup.
+
+```bash
+o-h backup run                       # snapshot now
+o-h backup list                      # archives + sizes
+o-h backup restore <zip> [--dry-run] # files land immediately; restart to reload stores
+```
+
+The `backup` block in `config.json` tunes `enabled`, `everyHours` and `keep`; `logsKeepDays` prunes old
+log JSONL. Restore refuses to run while more than one gateway instance shares the data dir.
 
 ### Instance registry (scaling / gestione istanze)
 Every running gateway registers itself (`dataDir/instances/<pid>.json`) and refreshes a heartbeat every 15s.
