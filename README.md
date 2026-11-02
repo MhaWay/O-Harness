@@ -48,6 +48,9 @@ node packages/cli/src/bin.ts tools list | tools call --device <id> --tool calend
 node packages/cli/src/bin.ts tools pending
 node packages/cli/src/bin.ts tools respond <ask-id> --approve [--remember]
 node packages/cli/src/bin.ts tools grants | tools revoke <deviceId> <tool>
+
+# companion app (exposes mic/speaker/screenshot/notify):
+node packages/cli/src/bin.ts companion connect --url ws://<host>:<port>/node --name living-room
 ```
 
 GUI: open http://<host>:<port>/ (token from `o-h token`): dashboard, Chat (assistant, live token streaming), Scheduler, Memory, Minions + Pairing + Tools tabs, Models settings. Mobile companion: `/m`.
@@ -109,7 +112,9 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 23. ✅ Caching: in-process model response cache (deterministic auxiliary calls: consolidation, log analysis) keyed by model+messages, stats/clear RPC+CLI+Settings panel
 24. ✅ Testing: unit suites for auth (scrypt+sessions+cookies), voice config, tool broker (offer/grants/ask/approve/deny/timeout), settings store — 31 tests, all offline
 25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up### Logs (error tracking + model-assisted resolution)
-26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minionsEvery RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
+26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minions
+  27. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
+Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
 The GUI Logs view has search, level filter, 24h stats and an “Ask model to analyze” button.
@@ -147,6 +152,21 @@ In the web UI: the mic button in the composer dictates (mic -> 16kHz PCM -> ASR 
 the speaker button toggles auto-speak of replies, and each assistant reply carries a `listen` button.
 `GET /api/voice/tts?text=...` serves WAV for clients (token auth). Settings > Voice edits
 asr/tts/realtime URLs, language, voice and auto-speak, with a live service probe.
+
+### Companion apps
+Browsers refuse microphone and screen access on plain-IP (non-secure) origins. The companion solves that: run it once on
+the machine that owns the hardware and the gateway can use that hardware for you, with per-tool approval.
+
+```bash
+node packages/cli/src/bin.ts companion connect --url ws://<gateway-host>:18711/node --name desktop
+```
+
+It connects exactly like `o-h node connect` (token, overlay/direct, TLS, reconnect) and additionally offers
+four OS tools: `audio.listen` (sox/afrecord, 16 kHz mono — the shape the ASR backend wants), `audio.speak`
+(speaks a WAV), `screenshot` and `notify`. The first invocation of each tool fires an approval ask on the
+Tools tab (or `o-h tools respond <id> --approve --remember`); choosing *remember* creates a standing grant
+so subsequent calls run silently, revocable with `o-h tools revoke <device> <tool>`.
+Minions can also call device tools (`<deviceId>:<tool>` in the tool list), same broker and grants.
 
 ## Tests
 

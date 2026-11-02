@@ -6,6 +6,7 @@ import type { Duplex } from "node:stream";
 import WebSocket, { WebSocketServer } from "ws";
 import { decode, encode, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
 import { ensureOverlay, type OverlayKind } from "./overlay.ts";
+import { companionInvoke, companionTools } from "./companion.ts";
 
 export interface NodeOpts {
   url: string;
@@ -58,6 +59,7 @@ function handle(method: string, params: any): unknown {
   }
   if (method === "fs.read") return readFileText(params?.path);
   if (method === "fs.write") return writeFileAll(params?.path, params?.content);
+  if (method === "tool.invoke") return companionInvoke(String(params?.tool ?? ""), params?.args);
   throw new Error("node: unsupported method '" + method + "'");
 }
 
@@ -136,7 +138,8 @@ export async function connectNode(opts: NodeOpts & { addresses?: string[] }): Pr
         kind: "remote",
         hostname: hostname(),
         platform: platform() + "/" + arch(),
-        capabilities: ["exec", "fs.read", "fs.write"],
+        capabilities: ["exec", "fs.read", "fs.write", "tools"],
+        tools: companionTools(),
         deviceId: opts.deviceId,
         addresses: opts.addresses ?? [],
       }));

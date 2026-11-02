@@ -275,6 +275,27 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("usage: o-h node connect [--name <name>] [--device-id id] [--direct-port n] [--no-direct] [--overlay off|tailscale|zerotier] [--overlay-auth-key k] [--overlay-net id]");
   }
 
+  if (cmd === "companion") {
+    // Headless companion: exposes this machine's mic/speaker/screen/notifications
+    // as gateway-offered tools (browsers block these on plain-IP origins).
+    const sub = rest[0];
+    if (sub === "connect" || sub === undefined) {
+      const name = flag(args, "name") ?? ("companion@" + hostname());
+      const deviceId = flag(args, "device-id");
+      const directPort = flag(args, "direct-port");
+      const noDirect = args.includes("--no-direct");
+      const overlay = flag(args, "overlay") as OverlayKind | undefined;
+      const overlayAuthKey = flag(args, "overlay-auth-key");
+      const overlayNetId = flag(args, "overlay-net");
+      if (args.includes("--insecure")) process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+      const url = flag(args, "url") ?? wsUrl(port, "/node", cfg.token);
+      console.log("companion tools: audio.listen, audio.speak, screenshot, notify");
+      await runNodeLoop({ url: url, token: cfg.token, name, deviceId, directPort: directPort ? Number(directPort) : undefined, noDirect, overlay, overlayAuthKey, overlayNetId, log: (m: string) => console.log(m) });
+      return;
+    }
+    throw new Error("usage: o-h companion connect [--url wss://...] [--name n] [--no-direct] [--overlay off|tailscale]");
+  }
+
   if (cmd === "auth") {
     const sub = rest[0];
     if (sub === "set-password") {

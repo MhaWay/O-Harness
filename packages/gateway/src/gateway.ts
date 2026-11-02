@@ -834,6 +834,9 @@ export class Gateway {
       lastSeen: Date.now(),
     };
     this.registry.register(dev);
+    if (Array.isArray(msg.tools) && msg.tools.length) {
+      this.tools.offer(dev.id, msg.tools as { name: string; description?: string; parameters?: Record<string, unknown> }[]);
+    }
     const ctx = this.#wsCtx.get(ws);
     if (ctx && !ctx.admin && ctx.deviceId) {
       this.pairing.touch(ctx.deviceId);
