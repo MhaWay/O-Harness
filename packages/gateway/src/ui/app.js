@@ -592,6 +592,18 @@ function showView(name) {
         toast("oauth provider saved", "ok");
       }, "save");
   }
+  function cacheSectionHtml() {
+    return '<h3 style="margin:16px 0 8px">Model cache</h3><div class="row"><span id="cacheOut" class="dim">loading...</span><button class="ghost" id="cacheClear">Clear cache</button></div>';
+  }
+  async function loadCachePanel() {
+    var el = $("#cacheOut"); if (!el) return;
+    try {
+      var c = await rpc("cache.stats", {});
+      el.textContent = c.entries + " entries · " + c.hits + " hits / " + c.misses + " misses · " + Math.round(c.hitRate * 100) + "% hit rate · ttl " + Math.round(c.ttlMs / 1000) + "s";
+      var cb = $("#cacheClear");
+      if (cb) cb.onclick = function () { rpc("cache.clear", {}).then(function (r) { toast("cleared " + r.cleared + " entries", "ok"); loadCachePanel() }); };
+    } catch (e) { el.textContent = String(e); }
+  }
   async function loadSettings() {
     var st = S.settings = await rpc("settings.get", {});
     var def = st.default || {};
@@ -617,9 +629,10 @@ function showView(name) {
       "<h3 style='margin:16px 0 8px'>Providers</h3><table><tr><th>name</th><th>base url</th><th>api key</th><th>default model</th><th>models</th><th></th></tr><tbody id='provRows'>" + rows + "</tbody></table>" +
       "<div class='row' style='margin-top:12px'><button class='ghost' id='addProv'>+ Add provider</button><button class='primary' id='saveProv'>Save settings</button><span id='setOut' class='dim'></span></div>" +
       authSectionHtml() +
-      voiceSectionHtml();
+      voiceSectionHtml() + cacheSectionHtml();
     loadAuthPanel();
     loadVoiceCard();
+    loadCachePanel();
     var vs = $("#vSave");
     if (vs) vs.onclick = async function () {
       var cfg = {

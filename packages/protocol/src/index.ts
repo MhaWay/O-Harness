@@ -71,6 +71,8 @@ export const Methods = {
   MonitorAdd: "monitor.add",
   MonitorRemove: "monitor.remove",
   MonitorEnable: "monitor.enable",
+  CacheStats: "cache.stats",
+  CacheClear: "cache.clear",
   AlertList: "alerts.list",
   AlertAck: "alerts.ack",
 } as const;

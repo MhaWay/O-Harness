@@ -106,7 +106,7 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 20. ✅ Voice: local ASR/TTS adapter (LFM3), mic dictation + speak/reply buttons in chat, listen buttons on history, Settings > Voice card with probe (`o-h voice ...`)
 21. ✅ Monitoring & alerts: service probes (models/http/ws) + fired/resolved alerts with ack, Overview panel (services table + open alerts + Re-check now), `o-h monitor ...`
 22. ✅ CI/CD: GitHub Actions (pnpm + Node 24, `pnpm test` on push/PR to main)18. ✅ Slice 14: login & sessions - master password (scrypt) with HttpOnly session cookies, OAuth providers with sub allow-lists (device linking across accounts), `tokenEnabled` flag (token/password interchangeable), session revoke + logout, rate-limited login, CLI `o-h auth ...`, GUI gate password row + Settings Access panel
-
+23. ✅ Caching: in-process model response cache (deterministic auxiliary calls: consolidation, log analysis) keyed by model+messages, stats/clear RPC+CLI+Settings panel
 
 ### Logs (error tracking + model-assisted resolution)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
@@ -114,6 +114,11 @@ daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
 The GUI Logs view has search, level filter, 24h stats and an “Ask model to analyze” button.
 
+### Caching
+Expensive, deterministic model calls (memory consolidation, log analysis) are cached in-process,
+keyed by model + prompt hash, with a 15-minute TTL and LRU eviction (100 entries). Chat and minion
+turns are never served from cache. `o-h cache stats` shows hits/misses; `o-h cache clear` drops it;
+Settings > Model cache shows the same with a clear button.
 ### Monitoring & alerts
 O-Harness probes every configured service (model providers are auto-registered, plus any you add):
 `models` endpoints check `/v1/models`, `http` any GET, `ws` a handshake. A failed check fires an

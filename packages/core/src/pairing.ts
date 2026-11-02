@@ -153,6 +153,8 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "logs.tail": "read",
   "logs.stats": "read",
   "logs.resolve": "write",
+  "cache.stats": "read",
+  "cache.clear": "admin",
   "monitor.status": "read",
   "monitor.check": "read",
   "monitor.add": "admin",

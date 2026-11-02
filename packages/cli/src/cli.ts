@@ -413,6 +413,13 @@ export async function main(args: string[]): Promise<void> {
     throw new Error("unknown monitor subcommand: " + sub + " (status|check|add|remove|enable|alerts|ack)");
   }
 
+  if (cmd === "cache") {
+    const sub = (rest[0] ?? "stats").toLowerCase();
+    const vargs = rest.slice(1);
+    if (sub === "stats") { const r = await callOnce("cache.stats", undefined, port) as any; const pct = Math.round(r.hitRate * 100); console.log("entries " + r.entries + " · hits " + r.hits + " · misses " + r.misses + " · hit rate " + pct + "% · ttl " + Math.round(r.ttlMs / 1000) + "s" + (r.lastHitAt ? " · last hit " + new Date(r.lastHitAt).toLocaleString() : "")); return; }
+    if (sub === "clear") { const r = await callOnce("cache.clear", undefined, port) as any; console.log("cleared " + r.cleared + " entries"); return; }
+    throw new Error("unknown cache subcommand: " + sub + " (stats|clear)");
+  }
   if (cmd === "logs") {
     const sub = rest[0];
     if (sub === "tail" || sub === undefined) {

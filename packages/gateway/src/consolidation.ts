@@ -4,6 +4,7 @@
 import type { MemoryStore } from "@o-harness/core";
 import type { SettingsStore } from "./models.ts";
 import { chatOnce } from "./models.ts";
+import { ModelCache } from "./cache.ts";
 
 export interface ConsolidateOptions { subject?: string; dryRun?: boolean; maxClusters?: number }
 export interface ClusterReport { subject: string; ids: string[]; texts: string[]; merged?: string; addedId?: string }
@@ -47,7 +48,8 @@ const MERGE_SYSTEM = "You consolidate agent memories. Given a list of similar me
 export class MemoryConsolidator {
   memory: MemoryStore;
   settings: SettingsStore;
-  constructor(memory: MemoryStore, settings: SettingsStore) { this.memory = memory; this.settings = settings; }
+  cache?: ModelCache;
+  constructor(memory: MemoryStore, settings: SettingsStore, cache?: ModelCache) { this.memory = memory; this.settings = settings; this.cache = cache; }
 
   async consolidate(opts: ConsolidateOptions = {}): Promise<ConsolidateReport> {
     const active = this.memory.list({ subject: opts.subject, validity: "now" });
@@ -60,10 +62,9 @@ export class MemoryConsolidator {
       if (!resolved) continue;
       const list = cluster.map((m) => "- " + m.id + " " + m.text + " | " + new Date(m.createdAt ?? Date.now()).toISOString().slice(0, 10)).join(String.fromCharCode(10));
       try {
-        const out = await chatOnce({
-          baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: resolved.model.id, effort: "low",
-          messages: [{ role: "system", content: MERGE_SYSTEM }, { role: "user", content: "Memories:" + String.fromCharCode(10) + list }],
-        });
+        const cmsg = [{ role: "system", content: MERGE_SYSTEM }, { role: "user", content: "Memories:" + String.fromCharCode(10) + list }];
+        const call = () => chatOnce({ baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: resolved.model.id, effort: "low", messages: cmsg });
+        const out = this.cache ? await this.cache.wrap({ model: resolved.model.id, messages: cmsg, effort: "low" }, call) : await call();
         const raw = String(out.choices?.[0]?.message?.content ?? "").replace(/```json|```/g, "").trim();
         const j = JSON.parse(raw) as { merge?: boolean; text?: string };
         if (j.merge && j.text) {

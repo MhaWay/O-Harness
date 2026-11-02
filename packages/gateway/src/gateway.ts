@@ -22,6 +22,7 @@ import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
 import { VoiceStore, voiceTts, voiceAsr, voiceProbe, type VoiceConfig } from "./voice.ts";
 import { MonitorStore } from "./monitor.ts";
+import { ModelCache } from "./cache.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { resolveTls } from "./tls.ts";
 import { execFile } from "node:child_process";
@@ -99,6 +100,7 @@ export class Gateway {
   auth: AuthStore;
   voice: VoiceStore;
   monitor: MonitorStore;
+  cache: ModelCache;
   #monitorTimer: ReturnType<typeof setInterval> | null = null;
   consolidator: MemoryConsolidator;
   grants: GrantsStore;
@@ -127,7 +129,8 @@ export class Gateway {
     this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
     this.monitor = new MonitorStore(join(dataDirOf(dataDir), "monitor"));
     this.settings = new SettingsStore(dataDirOf(dataDir));
-    this.consolidator = new MemoryConsolidator(this.memory, this.settings);
+    this.cache = new ModelCache();
+    this.consolidator = new MemoryConsolidator(this.memory, this.settings, this.cache);
     this.grants = new GrantsStore(dataDirOf(dataDir));
     this.tools = new ToolBroker(
       this.grants,
@@ -344,7 +347,7 @@ export class Gateway {
     });
     this.rpc.set(Methods.LogsTail, (p) => this.log.tail({ limit: p?.limit ? Number(p.limit) : 100, level: p?.level, module: p?.module, q: p?.q }));
     this.rpc.set(Methods.LogsStats, () => this.log.stats());
-    this.rpc.set(Methods.LogsResolve, async (p) => await resolveLogs(this.log, chatOnce, this.settings, { q: p?.q ? String(p.q) : undefined, level: p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined }));
+    this.rpc.set(Methods.LogsResolve, async (p) => await resolveLogs(this.log, chatOnce, this.settings, { q: p?.q ? String(p.q) : undefined, level: p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined }, this.cache));
     this.rpc.set(Methods.MemoryConsolidate, (p) => this.consolidator.consolidate({ subject: p?.subject ? String(p.subject) : undefined, dryRun: Boolean(p?.dryRun) }));
     this.rpc.set(Methods.PairingCreate, (p) => {
       const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });
@@ -422,6 +425,8 @@ export class Gateway {
       return { text };
     });
     this.rpc.set(Methods.VoiceProbe, () => voiceProbe(this.voice.get()));
+    this.rpc.set(Methods.CacheStats, () => ({ ...this.cache.stats(), ttlMs: this.cache.ttlMs, maxEntries: this.cache.maxEntries }));
+    this.rpc.set(Methods.CacheClear, () => ({ cleared: this.cache.clear() }));
     this.rpc.set(Methods.MonitorStatus, () => ({ services: this.monitor.services, statuses: this.monitor.lastStatus, lastCheckAt: this.monitor.lastCheckAt, openAlerts: this.monitor.alerts.filter((a) => a.state === "firing" && !a.acked).length, alerts: this.monitor.alerts.slice(0, 30) }));
     this.rpc.set(Methods.MonitorCheck, async () => await this.monitor.check((t, d) => this.#broadcastEvent(t, d), this.log));
     this.rpc.set(Methods.MonitorAdd, (p) => this.monitor.addService(String(p?.name ?? "service"), (String(p?.kind ?? "http") as "http" | "ws" | "models"), String(p?.url ?? "")));
