@@ -357,7 +357,17 @@ export class Gateway {
     });
     this.rpc.set(Methods.LogsTail, (p) => this.log.tail({ limit: p?.limit ? Number(p.limit) : 100, level: p?.level, module: p?.module, q: p?.q }));
     this.rpc.set(Methods.LogsStats, () => this.log.stats());
-    this.rpc.set(Methods.LogsResolve, async (p) => await resolveLogs(this.log, chatOnce, this.settings, { q: p?.q ? String(p.q) : undefined, level: p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined }, this.cache));
+    this.rpc.set(Methods.LogsResolve, async (p) => {
+      const rq = p?.q ? String(p.q) : undefined;
+      const lvl = p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined;
+      if (!this.sessions.get("logs-resolver")) this.sessions.create("logs-resolver", "logs-resolver");
+      const hist = this.sessions.get("logs-resolver")!.entries.filter((e) => e.kind === "resolver").slice(-12);
+      const prior = hist.flatMap((e) => { const d = e.data as { q?: string }; return [{ role: "user", content: d?.q ?? "log analysis" }, { role: "assistant", content: String((e.data as { analysis?: string }).analysis ?? "").slice(0, 900) }]; });
+      const res = await resolveLogs(this.log, chatOnce, this.settings, { q: rq, level: lvl, history: prior }, this.cache);
+      this.sessions.append("logs-resolver", { ts: Date.now(), from: "resolver", kind: "resolver", data: { q: rq ?? "(no focus)", level: lvl ?? "warn", analysis: res.analysis } });
+      this.#broadcastEvent("sessions.changed", { sessionId: "logs-resolver" });
+      return res;
+    });
     this.rpc.set(Methods.MemoryConsolidate, (p) => this.consolidator.consolidate({ subject: p?.subject ? String(p.subject) : undefined, dryRun: Boolean(p?.dryRun) }));
     this.rpc.set(Methods.PairingCreate, (p) => {
       const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });

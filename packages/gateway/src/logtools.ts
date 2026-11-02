@@ -27,7 +27,7 @@ export async function resolveLogs(
   store: LogStore,
   chatOnceFn: (p: { baseUrl: string; apiKey?: string; model: string; effort?: string; messages: { role: string; content: string }[] }) => Promise<any>,
   settings: { resolveDefault(): { baseUrl: string; apiKey?: string; model: { id: string } } | undefined },
-  opts?: { q?: string; level?: "debug" | "info" | "warn" | "error" },
+  opts?: { q?: string; level?: "debug" | "info" | "warn" | "error"; history?: { role: string; content: string }[] },
   cache?: ModelCache,
 ): Promise<{ analysis: string; entryCount: number }> {
   const def = settings.resolveDefault();
@@ -36,6 +36,8 @@ export async function resolveLogs(
   const digest = entries.slice(0, 80).map((e) => JSON.stringify(e)).join("\n");
   const messages = [
     { role: "system", content: RESOLVE_PROMPT },
+    // prior resolutions from the dedicated resolver session keep continuity across runs
+    ...(opts?.history ?? []),
     { role: "user", content: (opts?.q ? "Focus: " + opts.q + "\n" : "") + "Recent errors/warnings (" + total + " matched, " + entries.length + " shown newest-first):\n" + digest },
   ];
   const call = () => chatOnceFn({ baseUrl: def.baseUrl, apiKey: def.apiKey, model: def.model.id, effort: "low", messages });
