@@ -537,6 +537,9 @@ export class Gateway {
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("X-Frame-Options", "DENY");
       res.setHeader("Referrer-Policy", "no-referrer");
+      // Mic is needed by the browser UI (dictation); every other capability is denied.
+      res.setHeader("Permissions-Policy", "microphone=(self), camera=(), display-capture=(), geolocation=(), clipboard-read=(), clipboard-write=()");
+      if (tlsMat && tlsMat.key) res.setHeader("Strict-Transport-Security", "max-age=31536000");
       res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
       const bodyChunks: Buffer[] = [];
       let bodyLen = 0;

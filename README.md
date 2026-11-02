@@ -123,7 +123,8 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 32. ✅ Alert notifications: fired/resolved events toast in the GUI and land as entries in a dedicated `alerts` session (durable, restart-safe, browsable like chat history)
 33. ✅ Resolver sessions: `o-h logs resolve` keeps its own session (`logs-resolver`) — every analysis is appended as an entry and previous rounds are replayed into the next prompt, so investigations stay continuous across calls
 34. ✅ Static asset caching: UI files served with weak ETags + gzip (304 revalidation, `no-cache`) — repeat loads are byte-free and payloads ~4x smaller
-35. Next: npm publish (deferred by user)
+35. ✅ Security hardening: `Permissions-Policy` locks every capability except the mic (camera/display-capture/geolocation/clipboard denied — needed for browser dictation); strict HSTS header on TLS responses; header contract + ETag/gzip revalidation locked by tests (47/47)
+36. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.

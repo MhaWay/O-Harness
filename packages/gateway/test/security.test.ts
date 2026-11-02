@@ -28,7 +28,25 @@ test("security: baseline headers on all responses", async () => {
     const csp = res.headers.get("content-security-policy") ?? "";
     assert.ok(csp.indexOf("frame-ancestors") >= 0, "csp frame-ancestors " + path);
     assert.ok(csp.indexOf("object-src") >= 0, "csp object-src " + path);
+    const pp = res.headers.get("permissions-policy") ?? "";
+    assert.ok(pp.indexOf("camera=()") >= 0, "permissions denies camera " + path);
+    assert.ok(pp.indexOf("microphone=(self)") >= 0, "permissions allows mic " + path);
   }
+});
+
+test("security: static assets revalidate with ETag and honor gzip", async () => {
+  if (!gw) await up();
+  const first = await fetch("http://127.0.0.1:" + port + "/assets/app.js", { headers: { "accept-encoding": "gzip" } });
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("content-encoding"), "gzip", "gzip when asked");
+  const etag = first.headers.get("etag") ?? "";
+  assert.ok(etag.startsWith("W/\""), "weak etag: " + etag);
+  const again = await fetch("http://127.0.0.1:" + port + "/assets/app.js", { headers: { "if-none-match": etag } });
+  assert.equal(again.status, 304, "304 when etag matches");
+  const stale = await fetch("http://127.0.0.1:" + port + "/assets/app.js", { headers: { "if-none-match": "W/\"deadbeef\"" } });
+  assert.equal(stale.status, 200, "200 on mismatch");
+  const plain = await fetch("http://127.0.0.1:" + port + "/assets/app.js", { headers: { "accept-encoding": "identity" } });
+  assert.equal(plain.headers.get("content-encoding"), null, "no gzip when not requested");
 });
 
 test("security: 1MB body limit -> 413, small bodies fine", async () => {
