@@ -127,6 +127,7 @@ export class ChatRuntime {
     const maxTurns = this.#opts.maxTurns ?? 6;
     const steps: ChatToolStep[] = [];
     let text = "";
+    let thinkAll = "";
     try {
       for (let turn = 0; turn < maxTurns; turn++) {
         const out = await chatOnceStream({
@@ -134,7 +135,10 @@ export class ChatRuntime {
           model: opts.model ?? resolved.model.id,
           effort: opts.effort ?? resolved.effort,
           messages, tools: toolDefs,
-        }, (tok, reasoning) => this.#opts.broadcast?.("chat.stream", { sessionId, turn, tok, reasoning: reasoning ? true : undefined }));
+        }, (tok, reasoning) => {
+          if (reasoning) thinkAll += tok;
+          this.#opts.broadcast?.("chat.stream", { sessionId, turn, tok: tok || undefined, reasoning: reasoning ? true : undefined });
+        });
         const msg = out?.choices?.[0]?.message ?? {};
         if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
           messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
@@ -161,6 +165,7 @@ export class ChatRuntime {
               content = "unknown tool: " + name;
             }
             const contentStr = typeof content === "string" ? content : JSON.stringify(content);
+            this.#opts.broadcast?.("chat.tool", { sessionId, turn, tool: name });
             steps.push({ tool: name, args, result: contentStr.slice(0, 500) });
             messages.push({ tool_call_id: tc.id, role: "tool", content: contentStr.slice(0, 8000) });
           }
@@ -174,7 +179,7 @@ export class ChatRuntime {
       text = text || "error: " + String(err);
     }
     if (!text) text = "(empty reply)";
-    const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined } });
+    const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined, reasoning: thinkAll ? thinkAll.slice(0, 6000) : undefined } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: asEntry });
     return { text, entries: s.entries.length, toolSteps: steps.length ? steps : undefined };
   }

@@ -145,6 +145,11 @@ function showView(name) {
   function bubbleFor(e) {
     var tools = (e.tools || []).map(function (t) { return '<span class="badge">' + esc(t) + "</span>" }).join("");
     var bbl = bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools });
+    if (e.reasoning) {
+      var thk = document.createElement("details"); thk.className = "think";
+      thk.innerHTML = "<summary>Thoughts</summary><pre>" + esc(e.reasoning) + "</pre>";
+      bbl.insertBefore(thk, bbl.querySelector(".md"));
+    }
     if (e.role === "assistant") { var mh = bbl.querySelector(".meta"); if (mh) addPlay(mh, e.text); }
     return bbl;
   }
@@ -200,9 +205,13 @@ function showView(name) {
     sending = true; $("#sendBtn").disabled = true;
     input.value = ""; input.style.height = "auto";
     $("#chatLog").appendChild(bubble("user", md(msg), { mline: "<span>you</span>" }));
-    var wait = bubble("assistant", '<span class="thinking"><i></i><i></i><i></i></span>');
+    var wait = bubble("assistant", '<span class="thinking"><i></i><i></i><i></i></span>', { mline: "<span></span>" });
+    var thk = document.createElement("details"); thk.className = "think"; thk.open = true;
+    thk.innerHTML = "<summary>Thinking...</summary><pre></pre>";
+    wait.insertBefore(thk, wait.querySelector(".md"));
     $("#chatLog").appendChild(wait);
     $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+    S.think = "";
     S.streaming = wait.querySelector(".md");
     S.streaming.dataset.buf = "";
     try {
@@ -210,6 +219,8 @@ function showView(name) {
       var replyText = r && r.text ? r.text : String(r || "");
       if (S.streaming) {
         S.streaming.innerHTML = md(replyText);
+        var thinkHost = S.streaming.parentElement && S.streaming.parentElement.querySelector("details.think");
+        if (thinkHost) { thinkHost.open = false; thinkHost.querySelector("summary").textContent = S.think ? "Thoughts" : "Thinking..."; if (!S.think) thinkHost.remove(); }
         var metaHost = S.streaming.parentElement && S.streaming.parentElement.querySelector(".meta");
         if (metaHost) addPlay(metaHost, replyText);
         if (V.autoSpeak) speakText(replyText);
@@ -910,12 +921,26 @@ function showView(name) {
     }
     window.OH.onEvent = function (topic, data) {
       if (topic === "chat.stream") {
-        if (S.streaming && data && data.sessionId === S.session && data.tok) {
-          S.streaming.dataset.buf = (S.streaming.dataset.buf || "") + data.tok;
-          S.streaming.innerHTML = md(S.streaming.dataset.buf);
-          $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+        if (S.streaming && data && data.sessionId === S.session) {
+          var liveBubble = S.streaming.parentElement;
+          if (data.reasoning) {
+            S.think = (S.think || "") + (data.tok || "");
+            var pre = liveBubble && liveBubble.querySelector("details.think pre");
+            if (pre) pre.textContent = S.think.length > 4000 ? S.think.slice(-4000) : S.think;
+            $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+          } else if (data.tok) {
+            S.streaming.dataset.buf = (S.streaming.dataset.buf || "") + data.tok;
+            S.streaming.innerHTML = md(S.streaming.dataset.buf);
+            $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+          }
         }
       } else if (topic === "sessions.changed") loadSessionsCount();
+      else if (topic === "chat.tool") {
+        if (S.streaming && data && data.sessionId === S.session) {
+          var tb = S.streaming.parentElement; var tm = tb && tb.querySelector(".meta");
+          if (tm) { var tag = document.createElement("span"); tag.className = "badge live"; tag.textContent = "\u2699 " + data.tool; tm.appendChild(tag); }
+        }
+      }
       else if (topic === "agents.changed") { if (S.view === "overview") loadOverview(); else if (S.view === "minions") loadMinions(); else S.minions = []; }
       else if (topic === "device.up" || topic === "device.down") { if (S.view === "devices") loadDevices(); else if (S.view === "overview") loadOverview() }
       else if (topic === "tools.ask") { toast("a device wants to run a tool", ""); if (S.view === "tools") loadTools() }

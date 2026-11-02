@@ -181,7 +181,10 @@ export async function chatOnceStream(opts: { baseUrl: string; apiKey?: string; m
       try { j = JSON.parse(data); } catch { continue; }
       const d = j?.choices?.[0]?.delta ?? {};
       if (typeof d.content === "string" && d.content) { content += d.content; onToken?.(d.content, false); }
-      else if (typeof d.reasoning === "string" && d.reasoning) { onToken?.("", true); }
+      else {
+        const rtext = typeof d.reasoning === "string" ? d.reasoning : typeof d.reasoning_content === "string" ? d.reasoning_content : "";
+        if (rtext) onToken?.(rtext, true);
+      }
       if (Array.isArray(d.tool_calls)) {
         for (const tc of d.tool_calls) {
           const idx = Number(tc.index ?? 0);
