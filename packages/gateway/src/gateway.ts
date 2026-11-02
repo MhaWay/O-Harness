@@ -15,6 +15,7 @@ import { SettingsStore, fetchProviderModels, chatOnce, EFFORTS, type Settings, t
 import { WEBUI_HTML } from "./webui.ts";
 import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoSub, COOKIE_NAME, type OAuthProviderCfg } from "./auth.ts";
 import { runBackup, listBackups, restoreBackup } from "./backup.ts";
+import { runDoctor } from "./doctor.ts";
 import { LogStore } from "./log.ts";
 import { logToolDefs, resolveLogs } from "./logtools.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
@@ -458,6 +459,8 @@ export class Gateway {
       this.log.warn("backup", "restoring from " + file + " — restart required for stores to reload cleanly");
       return { ...restoreBackup(this.#dataDir, file, { dryRun: Boolean(p?.dryRun) }), restartRequired: true };
     });
+
+    this.rpc.set(Methods.DoctorRun, async (p) => ({ checks: await runDoctor({ dataDir: this.#dataDir, deep: Boolean(p?.deep) }) }));
 
     // --- device-offered tools + authorization grants ---
     this.rpc.set(Methods.DeviceToolsOffer, (p, ctx) => {

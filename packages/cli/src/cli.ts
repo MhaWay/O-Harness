@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { loadConfig, dataDirOf, listInstances } from "@o-harness/gateway";
 import { createDefaultGateway } from "@o-harness/gateway";
-import { runNodeLoop } from "@o-harness/gateway";
+import { runNodeLoop, runDoctor } from "@o-harness/gateway";
 import type { OverlayKind } from "@o-harness/gateway";
 import { callOnce, wsUrl } from "./client.ts";
 import { hostname } from "node:os";
@@ -59,6 +59,7 @@ export async function main(args: string[]): Promise<void> {
       "gateway start [--port p] [--host h] [--tls auto|off]   start gateway (GUI http://host:port/, mobile /m)",
       "instances                                            live gateway instances sharing this data dir (duplicate detection)",
       "backup run|list|restore <zip> [--dry-run]             automatic daily ZIP backup of the data dir (keep newest)",
+      "doctor [--data-dir d] [--deep] [--port p]              one-shot self-check of config, gateway, models, disk, backups",
       "token                                              print admin token",
       "devices                                             list connected devices (+transport)",
       "exec [--device id] <command>                        run command on a device (local default)",
@@ -496,6 +497,18 @@ export async function main(args: string[]): Promise<void> {
       console.log("pid " + String(i.pid).padEnd(7) + " port " + String(i.port).padEnd(6) + " mode " + i.mode + "  up " + Math.round((Date.now() - i.startedAt) / 60000) + "min  hb " + Math.round((Date.now() - i.heartbeatAt) / 1000) + "s ago" + (i.pid === process.pid ? "  <- you" : ""));
     }
     if (list.length > 1) console.log("WARNING: " + list.length + " gateway instances share this data dir — that is usually an accident (duplicate sessions/memory conflicts)");
+    return;
+  }
+
+  if (cmd === "doctor") {
+    const dataDir = flag(rest, "data-dir");
+    const checks = await runDoctor({ dataDir: dataDir ?? undefined, deep: rest.includes("--deep") });
+    const fails = checks.filter((c) => !c.ok);
+    for (const c of checks) {
+      console.log((c.ok ? "OK   " : "FAIL ") + c.name.padEnd(22) + c.detail + (c.hint ? "  -> " + c.hint : ""));
+    }
+    console.log(fails.length ? fails.length + " problem(s) found" : "all checks passed");
+    if (fails.length) process.exitCode = 1;
     return;
   }
 

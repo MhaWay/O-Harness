@@ -119,7 +119,8 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
 29. ✅ Mobile /m redesign — chat-first page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools)
 30. ✅ Backups: automatic daily ZIP snapshots of the data dir (atomic, prune-to-keep), manual run/list/restore via RPC+CLI+Settings card
-31. Next: npm publish (deferred by user)
+31. ✅ Doctor self-check: `o-h doctor` runs a full one-shot self-check (config, live gateway, instance duplicates, disk space, every model provider, voice services, TLS material, backup freshness, runtime) and prints pass/fail with fix hints; same via `doctor.run` RPC, and a "Run doctor" button in the GUI Overview
+32. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
@@ -183,6 +184,14 @@ chat with the assistant (voice dictation via the mic button, replies spoken when
 minion dispatch + live status, memory search, an approvals tray for tool-use prompts raised against the
 phone's own tools, and an unpair button. The phone's offered tools (device.info, notes.*, calendar.*) execute
 locally in the browser — phone data never leaves the device without approval.
+
+### Doctor (self-check)
+One command validates the whole install: `o-h doctor [--deep]`. It checks the config file, that a
+gateway actually answers `/health` (probing live instance ports, not just the config port), that no
+duplicate gateway shares the data dir, disk space, every configured model provider (endpoint + model
+listing; `--deep` does a real round-trip against the default model), the voice batch server, TLS
+material, and that backups are fresh (< 30 h). Failures print a concrete hint. The gateway exposes
+the same as `doctor.run` and the Overview tab has a "Run doctor" button.
 
 ### Backups
 The gateway snapshots its whole data dir (sessions, memory, settings, auth, pairing, grants, voice,

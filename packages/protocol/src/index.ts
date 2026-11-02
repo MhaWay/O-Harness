@@ -78,6 +78,7 @@ export const Methods = {
   BackupRun: "backup.run",
   BackupList: "backup.list",
   BackupRestore: "backup.restore",
+  DoctorRun: "doctor.run",
 } as const;
 
 export type WireMsg = { type: string; id?: string; method?: string; params?: unknown; result?: unknown; error?: unknown; [k: string]: unknown };

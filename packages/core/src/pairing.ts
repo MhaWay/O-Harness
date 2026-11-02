@@ -159,6 +159,7 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "backup.run": "admin",
   "backup.list": "admin",
   "backup.restore": "admin",
+  "doctor.run": "admin",
   "monitor.status": "read",
   "monitor.check": "read",
   "monitor.add": "admin",

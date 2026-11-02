@@ -296,8 +296,17 @@ function showView(name) {
         "<h2 class='sec'>Alerts</h2>" + fireHtml +
         "<h2 class='sec'>Services" + (mon.lastCheckAt ? " <span class='dim' style='font-size:12px'>checked " + fmtAgo(mon.lastCheckAt) + "</span>" : "") + "</h2>" +
         "<table><tbody>" + svcRows + "</tbody></table>" +
-        "<div class='row' style='margin-top:8px'><button class='ghost' id='monNow'>Re-check now</button></div>";
+        "<div class='row' style='margin-top:8px'><button class='ghost' id='monNow'>Re-check now</button> <button class='ghost' id='docNow'>Run doctor</button></div><div id='docOut'></div>";
       $("#monNow").onclick = async function () { $("#monNow").disabled = true; try { await rpc("monitor.check", {}); loadOverview() } finally { $("#monNow").disabled = false } };
+      $("#docNow").onclick = async function () {
+        $("#docNow").disabled = true; $("#docOut").innerHTML = "<div class='dim'>running checks…</div>";
+        try {
+          var r = await rpc("doctor.run", {});
+          var fails = (r.checks || []).filter(function (c) { return !c.ok });
+          $("#docOut").innerHTML = (r.checks || []).map(function (c) { return "<div class='" + (c.ok ? "dim" : "alertrow") + "'>" + (c.ok ? "✔ " : "✖ ") + esc(c.name) + " — " + esc(c.detail) + (c.hint ? " <span class='dim'>→ " + esc(c.hint) + "</span>" : "") + "</div>" }).join("") || "<div class='dim'>no checks</div>";
+          toast(fails.length ? fails.length + " problem(s) found" : "all checks passed");
+        } catch (err) { $("#docOut").innerHTML = "<div class='alertrow'>doctor failed: " + esc(String(err)) + "</div>" } finally { $("#docNow").disabled = false }
+      };
       $("#ovRecent").innerHTML = recentRows();
     } catch (e) { host.innerHTML = '<div class="empty">error: ' + esc(String(e)) + "</div>" }
   }
