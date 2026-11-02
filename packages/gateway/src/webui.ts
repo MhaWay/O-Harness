@@ -247,10 +247,10 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
 
 async function loadOverview(){
   try { const r = await fetch('/health'); $('ovHealth').textContent = JSON.stringify(await r.json(), null, 2); } catch(e){ $('ovHealth').textContent = 'gateway unreachable'; }
-  try { const s = await wsRpc('settings.get',{}); const d = s.default && s.default.providerId;
-    if (d) { const p = s.providers.find(x=>x.id===d.providerId); const m = p && p.models.find(x=>x.id===d.modelId);
-      $('ovDefault').innerHTML = p && m ? '<b>'+esc(p.name)+' / '+esc(m.id)+'</b> &nbsp;<span class="dim">thinking: '+ (d.effort||'none') +' · '+esc(p.baseUrl)+'</span>' : '<span class="bad">default points nowhere</span>'; }
-    else $('ovDefault').innerHTML = '<span class="dim">no default set</span>';
+  try { const s = await wsRpc('settings.get',{}); const def = s.default;
+    if (def && def.providerId) { const p = s.providers.find(x=>x.id===def.providerId); const m = p && p.models.find(x=>x.id===def.modelId);
+      $('ovDefault').innerHTML = p && m ? '<b>'+esc(p.name)+' / '+esc(m.id)+'</b> &nbsp;<span class="dim">thinking: '+ (def.effort||'none') +' · '+esc(p.baseUrl)+'</span>' : '<span class="bad">default points nowhere</span>'; }
+    else $('ovDefault').innerHTML = '<span class="dim">no default set — pick one in Settings</span>';
   } catch(e){ $('ovDefault').textContent = String(e); }
 }
 function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
