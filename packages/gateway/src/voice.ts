@@ -40,11 +40,11 @@ export class VoiceStore {
   }
   get(): VoiceConfig { return this.#cfg; }
   save(c: Partial<VoiceConfig>): VoiceConfig {
-    const d = defaultVoiceConfig();
+    const cur = this.#cfg;
     this.#cfg = {
-      asr: { ...d.asr, ...(c.asr || {}) },
-      tts: { ...d.tts, ...(c.tts || {}) },
-      realtime: { ...d.realtime, ...(c.realtime || {}) },
+      asr: { ...cur.asr, ...(c.asr || {}) },
+      tts: { ...cur.tts, ...(c.tts || {}) },
+      realtime: { ...cur.realtime, ...(c.realtime || {}) },
       autoSpeak: c.autoSpeak !== undefined ? Boolean(c.autoSpeak) : this.#cfg.autoSpeak,
     };
     const dir = this.#path.substring(0, this.#path.lastIndexOf("/"));
