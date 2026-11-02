@@ -1,4 +1,5 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "./jsonfile.ts";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -37,7 +38,7 @@ export class SessionsStore {
 
   #persist(id: string) {
     const s = this.#sessions.get(id);
-    if (s) writeFileSync(this.#path(id), JSON.stringify(s), { mode: 0o600 });
+    if (s) atomicWrite(this.#path(id), JSON.stringify(s), 0o600);
   }
 
   create(title: string, id?: string): Session {

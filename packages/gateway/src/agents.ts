@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chatOnce } from "./models.ts";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { dirname, join } from "node:path";
 import type { SettingsStore, Effort } from "./models.ts";
 import type { SessionsStore } from "@o-harness/core";
@@ -117,7 +118,7 @@ export class AgentRuntime {
       const dir = dirname(this.#storeFile);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       const recs = [...this.#minions.values()].sort((a, b) => b.createdAt - a.createdAt).slice(0, 200);
-      writeFileSync(this.#storeFile, JSON.stringify({ savedAt: Date.now(), minions: recs }));
+      atomicWrite(this.#storeFile, JSON.stringify({ savedAt: Date.now(), minions: recs }));
     } catch { /* best effort */ }
   }
 

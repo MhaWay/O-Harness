@@ -1,7 +1,8 @@
 // Voice configuration for O-Harness: batch TTS/ASR (lfm3 :8023) + realtime (lfm3 :8024).
 // lfm3-realtime exposes a non-OpenAI batch API: POST /tts_to_audio {text} -> wav;
 // POST /asr {audio_b64|audio_path, language} -> {text}; realtime is OpenAI-Realtime-protocol ws.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { join } from "node:path";
 
 export interface VoiceConfig {
@@ -49,7 +50,7 @@ export class VoiceStore {
     };
     const dir = this.#path.substring(0, this.#path.lastIndexOf("/"));
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(this.#path, JSON.stringify(this.#cfg, null, 2), { mode: 0o600 });
+    atomicWrite(this.#path, JSON.stringify(this.#cfg, null, 2), 0o600);
     return this.#cfg;
   }
 }

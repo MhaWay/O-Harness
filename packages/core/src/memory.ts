@@ -1,4 +1,5 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "./jsonfile.ts";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -102,7 +103,7 @@ export class MemoryStore {
   }
 
   #persist(m: Memory) {
-    writeFileSync(join(this.#dir, m.id + ".json"), JSON.stringify(m, null, 2), { mode: 0o600 });
+    atomicWrite(join(this.#dir, m.id + ".json"), JSON.stringify(m, null, 2), 0o600);
   }
 
   /**

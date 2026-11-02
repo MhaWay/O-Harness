@@ -1,13 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { createServer as createSecureServer } from "node:https";
 import { WebSocketServer, WebSocket } from "ws";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, atomicWrite, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import { SchedulerRuntime } from './scheduler.ts';
 import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
@@ -66,13 +66,13 @@ export function loadConfig(dataDir?: string): { port: number; token: string; plu
   } catch { /* first run */ }
   const cfg = { port: DEFAULT_PORT, token: randomBytes(16).toString("hex"), plugins: [] as string[] };
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
-  writeFileSync(file, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  atomicWrite(file, JSON.stringify(cfg, null, 2), 0o600);
   return cfg;
 }
 
 export function saveConfig(cfg: { port: number; token: string; plugins: string[] }, dataDir?: string) {
   mkdirSync(dataDirOf(dataDir), { recursive: true, mode: 0o700 });
-  writeFileSync(configFilePath(dataDir), JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  atomicWrite(configFilePath(dataDir), JSON.stringify(cfg, null, 2), 0o600);
 }
 
 export function resolvePlugins(cfg: { plugins: string[] }, explicit?: string[]): string[] {
@@ -400,7 +400,7 @@ export class Gateway {
       const path = configFilePath(this.#dataDir);
       const cur = JSON.parse(readFileSync(path, "utf-8"));
       cur.tokenEnabled = Boolean(p?.enabled);
-      writeFileSync(path, JSON.stringify(cur, null, 2), { mode: 0o600 });
+      atomicWrite(path, JSON.stringify(cur, null, 2), 0o600);
       this.config.tokenEnabled = cur.tokenEnabled;
       return { ok: true, tokenEnabled: cur.tokenEnabled };
     });

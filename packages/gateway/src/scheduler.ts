@@ -1,7 +1,8 @@
 // Scheduler: time-triggered runs. A job is "every N minutes" | "daily HH:mm" | "once <ISO>",
 // firing a chat message in a session or spawning a minion. Jobs persist across restarts.
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { dirname, join } from "node:path";
 
 export type JobCadence =
@@ -77,7 +78,7 @@ export class SchedulerRuntime {
     try {
       const dir = dirname(this.#storeFile);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(this.#storeFile, JSON.stringify({ savedAt: Date.now(), jobs: [...this.#jobs.values()] }));
+      atomicWrite(this.#storeFile, JSON.stringify({ savedAt: Date.now(), jobs: [...this.#jobs.values()] }));
     } catch { /* best effort */ }
   }
 

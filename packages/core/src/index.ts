@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 export * from "./sessions.ts";
 export * from "./memory.ts";
+export * from "./jsonfile.ts";
 export * from "./pairing.ts";
 export * from "./grants.ts";
 

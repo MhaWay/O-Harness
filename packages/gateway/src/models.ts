@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { join } from "node:path";
 
 export type Effort = "none" | "low" | "medium" | "xhigh";
@@ -69,7 +70,7 @@ export class SettingsStore {
     return s;
   }
   #persist(s: Settings) {
-    writeFileSync(this.#path, JSON.stringify(s, null, 2), { mode: 0o600 });
+    atomicWrite(this.#path, JSON.stringify(s, null, 2), 0o600);
   }
   get(): Settings { return this.#settings; }
   save(s: Settings) { this.#settings = s; this.#persist(s); }

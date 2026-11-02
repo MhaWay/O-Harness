@@ -1,7 +1,8 @@
 // Auth methods: master password (scrypt), cookie sessions, generic OAuth/OIDC login.
 // Single master user; the bootstrap token stays available when tokenEnabled.
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { join } from "node:path";
 
 const SCRYPT_N = 16384, SCRYPT_R = 8, SCRYPT_P = 1, KEYLEN = 64;
@@ -51,7 +52,7 @@ export class AuthStore {
   }
 
   #save() {
-    writeFileSync(this.file, JSON.stringify({ pw: this.pw, sessions: this.#sweep(), oauth: this.oauth }, null, 2), { mode: 0o600 });
+    atomicWrite(this.file, JSON.stringify({ pw: this.pw, sessions: this.#sweep(), oauth: this.oauth }, null, 2), 0o600);
   }
 
   #sweep(): Record<string, SessionRec> {

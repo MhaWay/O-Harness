@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, mkdirSync, existsSync } from "node:fs";
+import { atomicWrite } from "./jsonfile.ts";
 import { join } from "node:path";
 import { randomBytes, randomUUID, randomInt, createHash, timingSafeEqual } from "node:crypto";
 
@@ -58,8 +59,8 @@ export class PairingStore {
     if (existsSync(cp)) for (const c of JSON.parse(readFileSync(cp, "utf-8")) as PairCode[]) this.codes.set(c.code, c);
   }
   #save() {
-    writeFileSync(this.#file("devices.json"), JSON.stringify([...this.devices.values()], null, 2));
-    writeFileSync(this.#file("codes.json"), JSON.stringify([...this.codes.values()], null, 2), { mode: 0o600 });
+    atomicWrite(this.#file("devices.json"), JSON.stringify([...this.devices.values()], null, 2), 0o600);
+    atomicWrite(this.#file("codes.json"), JSON.stringify([...this.codes.values()], null, 2), 0o600);
   }
   createCode(opts: { kind?: string; scopes?: string[]; ttlMinutes?: number } = {}): PairCode {
     const code = String(randomInt(100000, 1_000_000));

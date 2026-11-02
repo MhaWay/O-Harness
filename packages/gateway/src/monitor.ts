@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { atomicWrite } from "@o-harness/core";
 import { join } from "node:path";
 import WebSocket from "ws";
 
@@ -31,7 +32,7 @@ export class MonitorStore {
   }
 
   #save(): void {
-    try { writeFileSync(this.#file, JSON.stringify({ services: this.services, alerts: this.alerts.slice(0, 200) })); } catch { /* never throws */ }
+    try { atomicWrite(this.#file, JSON.stringify({ services: this.services, alerts: this.alerts.slice(0, 200) })); } catch { /* never throws */ }
   }
   save(): void { this.#save(); }
 
