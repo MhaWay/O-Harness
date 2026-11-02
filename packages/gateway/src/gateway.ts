@@ -663,8 +663,9 @@ export class Gateway {
         return;
       }
       if (url.pathname === "/m" || url.pathname === "/m/index.html") {
-        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        res.end(MOBILE_HTML);
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+        try { res.end(readFileSync(new URL("mobile.html", UI_DIR), "utf8")); }
+        catch { res.end(MOBILE_HTML); }
         return;
       }
       if (url.pathname === "/health") {

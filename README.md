@@ -114,7 +114,7 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up### Logs (error tracking + model-assisted resolution)
 26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minions
   27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
-  28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
+  29. ✅ Mobile /m redesign — chat-first PWA-style page reusing the new UI assets (pairing, chat+voice, minions, memory, tool approvals, device tools): `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
@@ -168,6 +168,16 @@ four OS tools: `audio.listen` (sox/afrecord, 16 kHz mono — the shape the ASR b
 Tools tab (or `o-h tools respond <id> --approve --remember`); choosing *remember* creates a standing grant
 so subsequent calls run silently, revocable with `o-h tools revoke <device> <tool>`.
 Minions can also call device tools (`<deviceId>:<tool>` in the tool list), same broker and grants.
+
+### Mobile (/m)
+The mobile companion is a single-page app at `/m` built from the same static-asset layer as the desktop UI
+(`packages/gateway/src/ui/mobile.html` + `mobile.js`, sharing `style.css` and the persistent-websocket client).
+Pair with a 6-digit code (`o-h pair create`, or the Devices page — codes expire in 10 minutes by default);
+the secret is stored in the device browser's localStorage and survives reconnects. The page gives the phone:
+chat with the assistant (voice dictation via the mic button, replies spoken when voice replies are enabled),
+minion dispatch + live status, memory search, an approvals tray for tool-use prompts raised against the
+phone's own tools, and an unpair button. The phone's offered tools (device.info, notes.*, calendar.*) execute
+locally in the browser — phone data never leaves the device without approval.
 
 ### Instance registry (scaling / gestione istanze)
 Every running gateway registers itself (`dataDir/instances/<pid>.json`) and refreshes a heartbeat every 15s.

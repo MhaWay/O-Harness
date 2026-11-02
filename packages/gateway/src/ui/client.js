@@ -1,6 +1,6 @@
 // O-Harness browser client: persistent ws, rpc, events
 (function () {
-  var OH = { ws: null, reqs: {}, id: 0, onEvent: function () { }, onOpen: null, onClose: null, authFail: null };
+  var OH = { ws: null, reqs: {}, id: 0, onEvent: function () { }, onOpen: null, onClose: null, authFail: null, onDeviceReq: null };
   var P = new URLSearchParams(location.search);
   var TOKEN_KEY = "oh.token";
   var SECRET_KEY = "oh.secret";
@@ -36,6 +36,8 @@
           delete OH.reqs[m.id]; clearTimeout(r.timer);
           if (m.error) r.rej(m.error); else r.res(m.result);
         }
+      } else if (m.type === "rpc:req") {
+        if (OH.onDeviceReq) OH.onDeviceReq(m);
       } else if (m.type === "event") {
         OH.onEvent(m.topic, m.data);
       }

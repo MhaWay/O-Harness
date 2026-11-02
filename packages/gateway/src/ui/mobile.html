@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O-Harness</title>
+<link rel="stylesheet" href="/assets/style.css">
+<style>
+body { background: #0d1117; }
+#mApp { display: flex; flex-direction: column; min-height: 100vh; }
+#mHead { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #161b22; border-bottom: 1px solid #262d36; position: sticky; top: 0; z-index: 5; }
+#mHead b { flex: 1; }
+#mMain { flex: 1; padding: 12px; max-width: 640px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+#mNav { position: sticky; bottom: 0; display: flex; background: #161b22; border-top: 1px solid #262d36; }
+#mNav button { flex: 1; background: none; border: 0; color: #8a93a0; padding: 10px 4px 12px; font-size: 11px; cursor: pointer; }
+#mNav button .ico { display: block; font-size: 20px; }
+#mNav button.on { color: #5b9dd9; }
+.msec { display: none; }
+.msec.on { display: block; }
+.mrow { border-top: 1px solid #21262d; padding: 10px 2px; }
+.mrow:first-child { border-top: 0; }
+.banner { position: fixed; left: 10px; right: 10px; bottom: 70px; background: #161b22; border: 1px solid #d29922; border-radius: 10px; padding: 12px; z-index: 60; }
+@media (prefers-color-scheme: light) { body { background: #f5f6f8; color: #1c2128; } #mHead { background: #fff; border-bottom-color: #d8dee4; } #mNav { background: #fff; border-top-color: #d8dee4; } .mrow { border-top-color: #e3e8ee; } }
+</style>
+</head>
+<body>
+<div id="mGate" hidden>
+  <div style="max-width:420px;margin:15vh auto;padding:0 16px">
+    <div class="card">
+      <div class="logo big" style="margin-bottom:10px">O</div>
+      <h3 style="margin:0 0 6px">Pair this device</h3>
+      <p class="dim" style="margin:0 0 12px">Create a pairing code with <code>o-h pair create</code> (or on the gateway's Devices page), then enter it below.</p>
+      <input id="pairCode" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code">
+      <input id="pairBase" placeholder="server address (optional)" hidden>
+      <button id="pairBtn" class="primary" style="width:100%">Pair device</button>
+      <div id="pairErr" class="err"></div>
+    </div>
+  </div>
+</div>
+<div id="mApp" hidden>
+  <header id="mHead"><span class="logo">O</span><b>O-Harness</b><span id="mSt" class="badge">…</span></header>
+  <main id="mMain">
+    <section class="msec on" id="sec-chat">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <select id="mSessions" style="flex:1"></select>
+        <button id="mNewBtn" class="ghostbtn">+ New</button>
+      </div>
+      <div id="chatLog" style="min-height:50vh"></div>
+      <div class="composer" style="margin-top:10px;position:sticky;bottom:58px">
+        <textarea id="mInput" rows="1" placeholder="Message…"></textarea>
+        <div class="composer-tools">
+          <button id="mMicBtn" class="ghostbtn" title="dictate">&#127908;</button>
+          <button id="mSpeakBtn" class="ghostbtn" title="voice replies">&#128266;</button>
+          <button id="mSendBtn" class="primary">Send</button>
+        </div>
+      </div>
+    </section>
+    <section class="msec" id="sec-minions"></section>
+    <section class="msec" id="sec-memory"></section>
+    <section class="msec" id="sec-tools"></section>
+    <section class="msec" id="sec-me">
+      <div class="card">
+        <h3>This device</h3>
+        <div id="meDevice" class="dim">…</div>
+        <div class="row" style="margin-top:8px;display:flex;gap:8px"><button id="mUnpairBtn" class="ghost">Unpair device</button></div>
+      </div>
+      <div class="card">
+        <h3>Offered tools</h3>
+        <div id="meTools" class="dim">notes, calendar, device.info (stored locally on this device)</div>
+      </div>
+    </section>
+  </main>
+  <nav id="mNav">
+    <button class="on" data-tab="chat"><span class="ico">&#128172;</span>Chat</button>
+    <button data-tab="minions"><span class="ico">&#9881;&#65039;</span>Minions</button>
+    <button data-tab="memory"><span class="ico">&#129504;</span>Memory</button>
+    <button data-tab="tools"><span class="ico">&#128276;</span>Asks</button>
+    <button data-tab="me"><span class="ico">&#128241;</span>Device</button>
+  </nav>
+</div>
+<div id="toasts"></div>
+<script src="/assets/client.js"></script>
+<script src="/assets/mobile.js"></script>
+</body>
+</html>
