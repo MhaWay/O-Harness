@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { loadConfig } from "@o-harness/gateway";
+import { loadConfig, dataDirOf, listInstances } from "@o-harness/gateway";
 import { createDefaultGateway } from "@o-harness/gateway";
 import { runNodeLoop } from "@o-harness/gateway";
 import type { OverlayKind } from "@o-harness/gateway";
@@ -57,6 +57,7 @@ export async function main(args: string[]): Promise<void> {
       "O-Harness — personal agent gateway. Global flag: --port <p> (default from ~/.o-harness/config.json).",
       "",
       "gateway start [--port p] [--host h] [--tls auto|off]   start gateway (GUI http://host:port/, mobile /m)",
+      "instances                                            live gateway instances sharing this data dir (duplicate detection)",
       "token                                              print admin token",
       "devices                                             list connected devices (+transport)",
       "exec [--device id] <command>                        run command on a device (local default)",
@@ -460,6 +461,19 @@ export async function main(args: string[]): Promise<void> {
       return;
     }
     throw new Error("unknown logs subcommand: " + sub + " (tail|stats|resolve)");
+  }
+
+  if (cmd === "instances") {
+    const here = dataDirOf(undefined);
+    const list = listInstances(here);
+    const me = list.find((i) => i.pid === process.pid);
+    console.log("data dir: " + here);
+    if (!list.length) { console.log("no live instances registered (older gateway?)"); return; }
+    for (const i of list) {
+      console.log("pid " + String(i.pid).padEnd(7) + " port " + String(i.port).padEnd(6) + " mode " + i.mode + "  up " + Math.round((Date.now() - i.startedAt) / 60000) + "min  hb " + Math.round((Date.now() - i.heartbeatAt) / 1000) + "s ago" + (i.pid === process.pid ? "  <- you" : ""));
+    }
+    if (list.length > 1) console.log("WARNING: " + list.length + " gateway instances share this data dir — that is usually an accident (duplicate sessions/memory conflicts)");
+    return;
   }
 
   if (cmd === "pair") {

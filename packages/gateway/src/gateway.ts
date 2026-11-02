@@ -22,6 +22,7 @@ import { AgentRuntime } from "./agents.ts";
 import { ChatRuntime } from "./chat.ts";
 import { VoiceStore, voiceTts, voiceAsr, voiceProbe, type VoiceConfig } from "./voice.ts";
 import { MonitorStore } from "./monitor.ts";
+import { InstanceRegistry, listInstances, type InstanceInfo } from "./instances.ts";
 import { ModelCache } from "./cache.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { resolveTls } from "./tls.ts";
@@ -113,6 +114,8 @@ export class Gateway {
   #wssVoice = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
   #deviceConns = new Map<string, WebSocket>();
   #dataDir = dataDirOf();
+  instances: InstanceRegistry | null = null;
+  #warnedOthers = false;
   #pairHits = new Map<string, { n: number; resetAt: number }>();
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
@@ -477,6 +480,14 @@ export class Gateway {
     }
     await this.plugins.setupAll(this.#api());
     this.log.info("gateway", "started", { port: this.config.port, host: this.config.host });
+    this.instances = new InstanceRegistry(this.#dataDir, { pid: process.pid, port: this.config.port, host: this.config.host, mode: "local" });
+    const others = this.instances.start();
+    if (others.length) {
+      const msg = "other gateway instance(s) are running against the same data dir: " + others.map((o) => "pid " + o.pid + " on port " + o.port).join(", ") + " — sessions/memory are shared and may conflict";
+      this.log.warn("gateway", msg);
+      this.#warnedOthers = true;
+      console.warn("WARNING: " + msg);
+    }
 
     const tlsMat = resolveTls(this.config.tls, this.#dataDir);
     if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
@@ -658,7 +669,7 @@ export class Gateway {
       }
       if (url.pathname === "/health") {
         res.writeHead(200, { "content-type": "application/json" });
-        res.end(encode({ ok: true, mode: "local", protocol: PROTOCOL_VERSION, port: this.config.port }));
+        res.end(encode({ ok: true, mode: "local", protocol: PROTOCOL_VERSION, port: this.config.port, pid: process.pid, others: listInstances(this.#dataDir).filter((o) => o.pid !== process.pid).length }));
         return;
       }
       res.writeHead(404);
@@ -693,6 +704,7 @@ export class Gateway {
 
   async stop() {
     if (this.#monitorTimer) { clearInterval(this.#monitorTimer); this.#monitorTimer = null; }
+    if (this.instances) { this.instances.stop(); this.instances = null; }
     await this.plugins.teardownAll();
     for (const d of this.registry.all()) { if (d.conn) { try { (d.conn as WebSocket).close(); } catch { /* noop */ } } }
     for (const ws of [...this.#clientSockets]) { try { ws.close(); } catch { /* noop */ } }

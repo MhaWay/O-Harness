@@ -113,7 +113,8 @@ sidebar on narrow viewports. Legacy tab-style UI is still at /legacy.
 24. ✅ Testing: unit suites for auth (scrypt+sessions+cookies), voice config, tool broker (offer/grants/ask/approve/deny/timeout), settings store — 31 tests, all offline
 25. ✅ Security pass: CSP + nosniff + frame/deny headers on every response, 1 MiB request-body limit (→ 413), maxPayload caps on all websockets; inline-script hash policy noted as follow-up### Logs (error tracking + model-assisted resolution)
 26. ✅ Storage & atomicity: all JSON stores persist via atomic write-tmp+fsync+rename (no torn files on crash); config, sessions, memory, pairing, grants, settings, auth, voice, scheduler, monitor, minions
-  27. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
+  27. ✅ Instance registry (scaling/gestione istanze): heartbeated instance files under data dir, duplicate-gateway detection, `o-h instances`, health reports `others`
+  28. ✅ Companion apps: `o-h companion connect` runs a device that exposes OS tools (16kHz mic capture, speaker playback, screenshot, notifications) to the broker — per-call approval with standing grants, environment errors propagate to the caller. Lets non-secure (plain-IP) installs reach mic/screen/audio that browsers block.
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only.
@@ -167,6 +168,21 @@ four OS tools: `audio.listen` (sox/afrecord, 16 kHz mono — the shape the ASR b
 Tools tab (or `o-h tools respond <id> --approve --remember`); choosing *remember* creates a standing grant
 so subsequent calls run silently, revocable with `o-h tools revoke <device> <tool>`.
 Minions can also call device tools (`<deviceId>:<tool>` in the tool list), same broker and grants.
+
+### Instance registry (scaling / gestione istanze)
+Every running gateway registers itself (`dataDir/instances/<pid>.json`) and refreshes a heartbeat every 15s.
+Any instance — or the CLI without a live connection — can therefore discover sibling instances that
+share the same data dir. Two gateways on one data dir double the scheduler, split session writes and
+split event buses, so a second instance warns loudly at startup and `o-h instances` shows them all:
+
+```bash
+o-h instances                             # live instances + duplicate warning
+curl http://host:port/health              # { ok, pid, others: <sibling count> }
+```
+
+Stale entries (dead pid or heartbeat older than 90s) are pruned on read. Scaling up intentionally means
+separate data dirs per instance (isolated state), possibly behind a reverse proxy; the registry makes
+accidental sharing visible instead of silently corrupting shared stores.
 
 ## Tests
 
