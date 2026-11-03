@@ -41,12 +41,14 @@
       <section class="view on" id="v-chat">
         <div id="chatLog"></div>
         <div class="composer">
-          <textarea id="chatInput" rows="1" placeholder="Ask anything… (Enter to send, Shift+Enter newline)"></textarea>
-          <div class="composer-tools">
-            <select id="effortSel" title="reasoning effort"><option value="none">thinking: off</option><option value="low">low</option><option value="medium">medium</option><option value="xhigh">xhigh</option></select>
-            <button id="micBtn" class="ghostbtn" title="dictate with voice (LFM3)">&#127908;</button>
-            <button id="speakBtn" class="ghostbtn" title="voice replies">&#128266;</button>
-            <button id="sendBtn" class="primary">Send</button>
+          <textarea id="chatInput" rows="1" placeholder="Ask anything…  (Enter to send, Shift+Enter for newline)"></textarea>
+          <div class="composer-bar">
+            <div class="composer-left">
+              <button id="micBtn" class="iconbtn" title="dictate with voice (LFM3)">&#127908;</button>
+              <button id="speakBtn" class="iconbtn" title="voice replies">&#128266;</button>
+              <select id="effortSel" class="linksel" title="reasoning effort"><option value="none">thinking: off</option><option value="low">thinking: low</option><option value="medium">thinking: medium</option><option value="xhigh">thinking: xhigh</option></select>
+            </div>
+            <button id="sendBtn" class="sendbtn" title="send">&#11014;</button>
           </div>
         </div>
       </section>

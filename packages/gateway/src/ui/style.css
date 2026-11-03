@@ -60,10 +60,21 @@ main{display:flex;flex-direction:column;min-width:0}
 .thinking i{width:6px;height:6px;border-radius:50%;background:var(--dim);animation:bl 1s infinite}
 .thinking i:nth-child(2){animation-delay:.2s}.thinking i:nth-child(3){animation-delay:.4s}
 @keyframes bl{50%{opacity:.2}}
-.composer{border-top:1px solid var(--line);padding:12px 18px 14px;display:flex;gap:10px;align-items:flex-end;background:var(--bg)}
-#chatInput{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px 12px;font:inherit;resize:none;max-height:200px}
+.composer{border-top:1px solid var(--line);padding:10px 18px 12px;display:flex;flex-direction:column;gap:6px;background:var(--bg)}
+.composer-bar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.composer-left{display:flex;align-items:center;gap:4px}
+.iconbtn{background:transparent;border:0;color:var(--dim);border-radius:8px;padding:5px 8px;cursor:pointer;font-size:15px;line-height:1}
+.iconbtn:hover{background:var(--panel2);color:var(--txt)}
+.iconbtn.rec{background:#e0483e;color:#fff}
+.iconbtn.on{background:#2f8f5b;color:#fff}
+.linksel{background:transparent;border:0;color:var(--dim);font:12.5px inherit;padding:5px 4px;cursor:pointer;outline:none}
+.linksel:hover{color:var(--txt)}
+.linksel option{background:var(--panel);color:var(--txt)}
+.sendbtn{background:var(--acc);border:0;color:#fff;border-radius:10px;padding:6px 12px;font-size:15px;font-weight:600;cursor:pointer;line-height:1}
+.sendbtn:hover{filter:brightness(1.1)}
+.sendbtn:disabled{opacity:.5;cursor:default}
+#chatInput{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:11px 13px;font:inherit;resize:none;min-height:66px;max-height:200px}
 #chatInput:focus{outline:none;border-color:var(--acc)}
-.composer-tools{display:flex;flex-direction:column;gap:6px}
 #micBtn.rec{background:#e0483e;color:#fff;border-color:#e0483e}
 #speakBtn.on{background:#2f8f5b;color:#fff;border-color:#2f8f5b}
 
