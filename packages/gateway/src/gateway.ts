@@ -315,7 +315,7 @@ export class Gateway {
       const s = this.sessions.get(String(p?.sessionId ?? "main"));
       if (!s) return null;
       const all = s.entries.filter((e) => e.kind === "chat");
-      const map = (e: (typeof all)[number]) => { const t = (e.data as any).tools; const rz = (e.data as any).reasoning; return { seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text, ...(t ? { tools: t } : {}), ...(rz ? { reasoning: rz } : {}) }; };
+      const map = (e: (typeof all)[number]) => { const t = (e.data as any).tools; const rz = (e.data as any).reasoning; const st = (e.data as any).steps; return { seq: e.seq, ts: e.ts, role: (e.data as any).role, text: (e.data as any).text, ...(t ? { tools: t } : {}), ...(st ? { steps: st } : {}), ...(rz ? { reasoning: rz } : {}) }; };
       // pagination: newest `limit` entries, or the window ending before `since` for "load earlier"
       const limit = p?.limit ? Math.max(1, Math.min(500, Number(p.limit))) : all.length || 1;
       const since = p?.since ? Number(p.since) : Infinity;

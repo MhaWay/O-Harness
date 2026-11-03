@@ -124,7 +124,7 @@ export class ChatRuntime {
       }
     }
 
-    const maxTurns = this.#opts.maxTurns ?? 6;
+    const maxTurns = this.#opts.maxTurns ?? 30;
     const steps: ChatToolStep[] = [];
     let text = "";
     let thinkAll = "";
@@ -146,6 +146,7 @@ export class ChatRuntime {
             const name = String(tc.function?.name);
             let args: any = {};
             try { args = JSON.parse(tc.function?.arguments ?? "{}"); } catch { /* bad args -> {} */ }
+            this.#opts.broadcast?.("chat.tool", { sessionId, turn, tool: name, status: "running", args });
             let content: unknown;
             const devRef = deviceToolNames.get(name);
             if (devRef) {
@@ -165,7 +166,7 @@ export class ChatRuntime {
               content = "unknown tool: " + name;
             }
             const contentStr = typeof content === "string" ? content : JSON.stringify(content);
-            this.#opts.broadcast?.("chat.tool", { sessionId, turn, tool: name });
+            this.#opts.broadcast?.("chat.tool", { sessionId, turn, tool: name, status: "done", args, result: contentStr.slice(0, 500) });
             steps.push({ tool: name, args, result: contentStr.slice(0, 500) });
             messages.push({ tool_call_id: tc.id, role: "tool", content: contentStr.slice(0, 8000) });
           }
@@ -174,12 +175,22 @@ export class ChatRuntime {
         text = String(msg.content ?? "").trim();
         break;
       }
+      if (!text && steps.length) {
+        // tool-loop limit reached mid-task: ask for a progress wrap-up instead of stopping cold
+        try {
+          const wrap = await chatOnce({
+            baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: opts.model ?? resolved.model.id, effort: "low",
+            messages: [...messages, { role: "user", content: "You reached the tool-loop limit. Summarize what you completed and exactly what remains to continue." }],
+          });
+          text = String(wrap?.choices?.[0]?.message?.content ?? "").trim() || "(loop limit reached)";
+        } catch { text = "(loop limit reached)"; }
+      }
     } catch (err) {
       // model/loop failure mid-way: surface partial progress
       text = text || "error: " + String(err);
     }
     if (!text) text = "(empty reply)";
-    const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined, reasoning: thinkAll ? thinkAll.slice(0, 6000) : undefined } });
+    const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined, steps: steps.length ? steps.map((x) => ({ tool: x.tool, args: Object.fromEntries(Object.entries(x.args ?? {}).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 300) : v])) })) : undefined, reasoning: thinkAll ? thinkAll.slice(0, 6000) : undefined } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: asEntry });
     return { text, entries: s.entries.length, toolSteps: steps.length ? steps : undefined };
   }

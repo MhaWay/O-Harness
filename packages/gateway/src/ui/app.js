@@ -142,9 +142,25 @@ function showView(name) {
   var PAGE = 60;
   var chatEarliest = 0;
   var chatLoadingEarlier = false;
+  function stepLine(st) {
+    var label;
+    if (st.tool === "exec" && st.args && st.args.command) label = "exec " + String(st.args.command).split("\n")[0].slice(0, 90);
+    else if ((st.tool === "read_file" || st.tool === "write_file") && st.args && st.args.path) label = st.tool + " " + st.args.path;
+    else if (st.args && st.args.command) label = st.tool + " " + String(st.args.command).slice(0, 90);
+    else label = st.tool;
+    return '<div class="stepline" title="' + esc(JSON.stringify(st.args || {})) + '"><span class="stdot"></span>' + esc(label) + "</div>";
+  }
+  function stepsHost(e) {
+    var list = (e.steps && e.steps.length) ? e.steps : (e.tools ? e.tools.map(function (t) { return { tool: t, args: {} }; }) : null);
+    if (!list || !list.length) return "";
+    var open = list.some(function (s) { return s.status === "running"; });
+    return '<details class="steps"' + (open ? " open" : "") + '><summary>' + esc("\u2699") + ' Ran ' + list.length + " step" + (list.length > 1 ? "s" : "") + "</summary><div class='stepsbody'>" + list.map(stepLine).join("") + "</div></details>";
+  }
   function bubbleFor(e) {
     var tools = (e.tools || []).map(function (t) { return '<span class="badge">' + esc(t) + "</span>" }).join("");
     var bbl = bubble(e.role, md(e.text), { mline: "<span>" + fmtT(e.ts) + "</span>" + tools });
+    var sh = stepsHost(e);
+    if (sh) { var d = document.createElement("div"); d.innerHTML = sh; bbl.insertBefore(d.firstChild, bbl.querySelector(".md")); }
     if (e.reasoning) {
       var thk = document.createElement("details"); thk.className = "think";
       thk.innerHTML = "<summary>Thoughts</summary><pre>" + esc(e.reasoning) + "</pre>";
@@ -937,8 +953,20 @@ function showView(name) {
       } else if (topic === "sessions.changed") loadSessionsCount();
       else if (topic === "chat.tool") {
         if (S.streaming && data && data.sessionId === S.session) {
-          var tb = S.streaming.parentElement; var tm = tb && tb.querySelector(".meta");
-          if (tm) { var tag = document.createElement("span"); tag.className = "badge live"; tag.textContent = "\u2699 " + data.tool; tm.appendChild(tag); }
+          var tb = S.streaming.parentElement;
+          if (tb) {
+            var host = tb.querySelector(".stepsbody"); var det = tb.querySelector("details.steps");
+            if (!host) { det = document.createElement("details"); det.className = "steps"; det.open = true; det.innerHTML = '<summary>\u2699 Ran <span class="n">1</span> step</summary><div class="stepsbody"></div>'; tb.insertBefore(det, S.streaming); host = det.querySelector(".stepsbody"); }
+            var sig = data.tool + "|" + JSON.stringify(data.args || {});
+            var prev = null;
+            for (var i = host.children.length - 1; i >= 0; i--) { if (host.children[i].dataset.sig === sig) { prev = host.children[i]; break } }
+            var line = document.createElement("div"); line.className = "stepline"; line.dataset.sig = sig;
+            if (data.status === "running") { line.classList.add("run"); line.textContent = "\u25d0 " + data.tool; if (prev) prev.replaceWith(line); else host.appendChild(line); }
+            else { line.innerHTML = stepLine(data); if (prev) prev.replaceWith(line); else host.appendChild(line); }
+            var nEl = det.querySelector(".n"); if (nEl) nEl.textContent = String(host.children.length);
+            var tmt = tb.querySelector(".meta"); if (tmt) { var tg = tmt.querySelector(".badge.live"); if (!tg) { tg = document.createElement("span"); tg.className = "badge live"; tmt.appendChild(tg); } tg.textContent = "\u2699 " + data.tool; }
+            $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+          }
         }
       }
       else if (topic === "agents.changed") { if (S.view === "overview") loadOverview(); else if (S.view === "minions") loadMinions(); else S.minions = []; }
