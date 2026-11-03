@@ -90,7 +90,7 @@
   var views = {
     overview: loadOverview, sessions: loadSessions, minions: loadMinions,
     scheduler: loadScheduler, memory: loadMemory, tools: loadTools,
-    devices: loadDevices, settings: loadSettings, logs: loadLogs, chat: null
+    devices: loadDevices, settings: loadSettings, logs: loadLogs, chat: null, realtime: loadRealtime
   };
   async function loadLogs() {
   var host = $("#v-logs");
@@ -250,6 +250,130 @@ function showView(name) {
     $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
   }
   window.sendChat = sendChat;
+
+  // ---- Realtime voice (Jarvis mode): persistent mic<->LFM3 relay, live captions ----
+  var RT = { ws: null, ctx: null, stream: null, proc: null, play: null, playing: false, micOn: false, started: false, lastUser: "", lastBot: "" };
+  function rtWsUrl() { return (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/voice?token=" + encodeURIComponent(window.OH.getToken()); }
+  function rtLog(txt, cls) {
+    var box = $("#rtTranscript"); if (!box) return;
+    var d = document.createElement("div"); d.className = "rtline " + (cls || ""); d.innerHTML = txt;
+    box.appendChild(d); box.scrollTop = box.scrollHeight;
+  }
+  function rtSetStatus(s) { var el = $("#rtStatus"); if (el) el.textContent = s; }
+  function pcm16ToB64(samp) {
+    var buf = new Int16Array(samp.length);
+    for (var i = 0; i < samp.length; i++) buf[i] = Math.max(-1, Math.min(1, samp[i])) * 32767;
+    return window.btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(buf.buffer))));
+  }
+  function rtPlayB64(b64) {
+    try {
+      var bin = window.atob(b64); var n = bin.length / 2; var arr = new Int16Array(n);
+      for (var i = 0; i < n; i++) arr[i] = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+      var ac = RT.ctx || new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+      if (!RT.ctx) RT.ctx = ac;
+      var ab = ac.createBuffer(1, n, 24000); ab.getChannelData(0).set(Float32Array.from(arr, function (s) { return s / 32767 }));
+      var src = ac.createBufferSource(); src.buffer = ab; src.connect(ac.destination);
+      var t0 = RT.playAt && RT.playAt > ac.currentTime ? RT.playAt : ac.currentTime + 0.02;
+      src.start(t0); RT.playAt = t0 + ab.duration; RT.playing = true;
+      setTimeout(function () { if (!RT.ws) return }, 300);
+      src.onended = function () { if (RT.playAt <= ac.currentTime + 0.05) RT.playing = false; };
+    } catch (e) { }
+  }
+  async function rtStart() {
+    if (RT.ws) return;
+    rtSetStatus("connecting…");
+    try {
+      RT.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      var micCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      RT.micCtx = micCtx;
+      var src = micCtx.createMediaStreamSource(RT.stream);
+      RT.proc = micCtx.createScriptProcessor(1600, 1, 1);
+      RT.proc.onaudioprocess = function (e) {
+        if (RT.ws && RT.ws.readyState === 1 && RT.micOn) {
+          RT.ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcm16ToB64(e.inputBuffer.getChannelData(0)) }));
+        }
+      };
+      src.connect(RT.proc); RT.proc.connect(micCtx.destination);
+    } catch (e) { rtSetStatus("mic unavailable: " + (e.message || e)); return; }
+    var ws = new WebSocket(rtWsUrl()); RT.ws = ws; ws.binaryType = "arraybuffer";
+    ws.onopen = function () {
+      ws.send(JSON.stringify({ type: "session.update", session: { modalities: ["text", "audio"], input_audio_format: "pcm16", output_audio_format: "pcm16", turn_detection: { type: "server_vad" } } }));
+      RT.micOn = true; RT.started = true;
+      rtSetStatus("live — speak");
+      var mb = $("#rtMicBtn"); if (mb) { mb.classList.add("on"); mb.textContent = "Mic: ON" }
+      var st = $("#rtStartBtn"); if (st) st.textContent = "Stop";
+      rtLog("<span class='dim'>— session open —</span>", "");
+    };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(typeof ev.data === "string" ? ev.data : ""); } catch (e) { return }
+      if (m.type === "response.audio.delta") { rtPlayB64(m.delta); if (!RT.lastBot) RT.lastBot = " "; }
+      else if (m.type === "response.output_audio.done") { RT.playing = false; if (RT.lastBot) { rtLog("🤖 " + esc(RT.lastBot.trim()), "bot"); RT.lastBot = ""; } }
+      else if (m.type === "response.audio_transcript.delta") { RT.lastBot += m.delta || ""; }
+      else if (m.type === "response.audio_transcript.done") { if (m.transcript) { RT.lastBot = m.transcript } }
+      else if (m.type === "conversation.item.input_audio_transcription.completed" && m.transcript) { RT.lastBot = ""; rtLog("🧑 " + esc(m.transcript.trim()), "user"); }
+      else if (m.type === "response.output_item.added" && m.item && m.item.type === "message") { }
+      else if (m.type === "input_audio_buffer.speech_started") { rtSetStatus("listening…"); RT.playing = false; }
+      else if (m.type === "input_audio_buffer.speech_stopped") { rtSetStatus("live — speak"); }
+      else if (m.type === "error") { rtSetStatus("server: " + ((m.error && m.error.message) || "error")); }
+    };
+    ws.onclose = function () {
+      rtStopTracks(true);
+      RT.ws = null; rtSetStatus("closed");
+      var mb2 = $("#rtMicBtn"); if (mb2) mb2.classList.remove("on");
+      var st2 = $("#rtStartBtn"); if (st2) st2.textContent = "Start";
+    };
+    ws.onerror = function () { };
+  }
+  function rtStopTracks(keepStatus) {
+    try { if (RT.proc) RT.proc.disconnect(); } catch (e) { }
+    try { if (RT.stream) RT.stream.getTracks().forEach(function (t) { t.stop() }); } catch (e) { }
+    try { if (RT.micCtx) RT.micCtx.close(); } catch (e) { }
+    RT.proc = null; RT.stream = null; RT.micCtx = null;
+    if (!keepStatus) rtSetStatus("stopped");
+  }
+  function rtStop() {
+    if (RT.ws) { try { RT.ws.close(); } catch (e) { } }
+    rtStopTracks(false);
+    RT.micOn = false;
+    var mb = $("#rtMicBtn"); if (mb) { mb.classList.remove("on"); mb.textContent = "Mic: OFF" }
+    var st = $("#rtStartBtn"); if (st) st.textContent = "Start";
+  }
+  function loadRealtime() {
+    var host = $("#v-realtime");
+    if (!host || host.dataset.built === "1") { return }
+    host.dataset.built = "1";
+    host.innerHTML = "<h2 class='sec'>Realtime</h2>" +
+      "<div class='card' style='margin-bottom:10px'>" +
+      "<div class='row' style='align-items:center'>" +
+      "<button class='ghost' id='rtStartBtn'>Start</button>" +
+      "<button class='ghost' id='rtMicBtn' disabled>Mic: OFF</button>" +
+      "<button class='ghost' id='rtStopBtn'>Stop</button>" +
+      "<span id='rtStatus' class='dim'>offline</span>" +
+      "<span style='flex:1'></span>" +
+      "<label style='display:flex;gap:6px;align-items:center'><input id='rtSaveChat' type='checkbox'>save transcript to chat</label>" +
+      "</div>" +
+      "<div class='dim' style='margin-top:6px'>Direct speech conversation through the LFM3 realtime server (server-side VAD — just talk). While live, the gateway stays supervisable from the other tabs; mic mutes without stopping the session.</div></div>" +
+      "<div class='card'><h3 style='margin:0 0 8px'>Conversation</h3><div id='rtTranscript' style='max-height:48vh;overflow:auto;font-size:14px;line-height:1.55'></div>" +
+      "<div class='row' style='margin-top:8px'><button class='ghost' id='rtToChat'>Send transcript to chat</button></div></div>";
+    $("#rtStartBtn").addEventListener("click", function () { if (RT.ws) rtStop(); else rtStart(); });
+    $("#rtStopBtn").addEventListener("click", function () { rtStop(); });
+    $("#rtMicBtn").addEventListener("click", function () {
+      if (!RT.ws) return;
+      RT.micOn = !RT.micOn;
+      var mb = $("#rtMicBtn"); mb.classList.toggle("on", RT.micOn); mb.textContent = "Mic: " + (RT.micOn ? "ON" : "OFF");
+      rtSetStatus(RT.micOn ? "live — speak" : "live — mic muted");
+    });
+    $("#rtToChat").addEventListener("click", function () {
+      var lines = [...host.querySelectorAll(".rtline")].map(function (x) { return x.textContent });
+      var txt = lines.join("\n").trim();
+      if (!txt || txt.indexOf("session open") === 0) { toast("nothing to send yet", ""); return }
+      var inp = null;
+      rpc("chat.send", { sessionId: S.session || "main", message: "[realtime transcript]\n" + txt }).then(function (r) { toast("saved to chat " + (S.session || "main"), "ok"); }).catch(function (e) { toast(String(e), "err") });
+    });
+    if (RT.ws) { rtSetStatus("live"); }
+  }
+  window.RT = RT;
+
   // ---- voice: dictation (mic -> LFM3 ASR) + TTS of replies ----
   var V = { autoSpeak: localStorage.getItem("oh.autospeak") === "1", audioCtx: null, chunks: null, proc: null, stream: null, recording: false };
   function toB64(bytes) { var bin = ""; var arr = new Uint8Array(bytes); for (var i = 0; i < arr.length; i += 8192) bin += String.fromCharCode.apply(null, arr.subarray(i, i + 8192)); return btoa(bin); }

@@ -138,3 +138,8 @@ button.danger{border-color:#5e2329;color:var(--err)}
 .prow:hover,.prow.on{background:var(--panel2)}
 #menuBtn{display:none}
 @media (max-width:860px){#app{grid-template-columns:1fr}#sidebar{position:fixed;left:-280px;top:0;bottom:0;z-index:40;transition:left .2s}#sidebar.open{left:0;box-shadow:24px 0 60px rgba(0,0,0,.5)}main{grid-column:1}#menuBtn{display:inline-flex!important}}
+
+/* Realtime transcript */
+.rtline { margin: 0 0 6px; }
+.rtline.user { color: var(--accent); }
+.rtline.bot { color: var(--fg); }

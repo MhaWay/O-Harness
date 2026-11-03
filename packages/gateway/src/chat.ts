@@ -124,12 +124,25 @@ export class ChatRuntime {
       }
     }
 
-    const maxTurns = this.#opts.maxTurns ?? 30;
+    // Unlimited by default: the model decides when it is finished.
+    // Guards: 30-min wall-clock deadline and a death-loop detector (same call 4x).
+    // dsh-style per-turn system reminder keeps it pushing until done or clearly blocked.
+    const maxTurns = this.#opts.maxTurns ?? (Number.POSITIVE_INFINITY as number);
+    const deadline = Date.now() + 30 * 60000;
+    const callCounts = new Map<string, number>();
+    let stopReason = "";
+    const REMINDER = `<system-reminder>You are mid-task. Keep calling tools until the task is complete — do not stop, summarize early, or offer to continue unless genuinely blocked. If blocked, state exactly what blocks you and what remains.</system-reminder>`;
+    let remIdx = -1;
     const steps: ChatToolStep[] = [];
     let text = "";
     let thinkAll = "";
     try {
       for (let turn = 0; turn < maxTurns; turn++) {
+        if (turn > 0) {
+          if (Date.now() > deadline) { stopReason = "wall-clock"; break; }
+          if (remIdx >= 0) (messages[remIdx] as any).content = REMINDER;
+          else { messages.push({ role: "user", content: REMINDER }); remIdx = messages.length - 1; }
+        }
         const out = await chatOnceStream({
           baseUrl: resolved.baseUrl, apiKey: resolved.apiKey,
           model: opts.model ?? resolved.model.id,
@@ -168,7 +181,10 @@ export class ChatRuntime {
             const contentStr = typeof content === "string" ? content : JSON.stringify(content);
             this.#opts.broadcast?.("chat.tool", { sessionId, turn, tool: name, status: "done", args, result: contentStr.slice(0, 500) });
             steps.push({ tool: name, args, result: contentStr.slice(0, 500) });
+            const sig = name + "|" + JSON.stringify(args ?? {});
+            const n = (callCounts.get(sig) ?? 0) + 1; callCounts.set(sig, n);
             messages.push({ tool_call_id: tc.id, role: "tool", content: contentStr.slice(0, 8000) });
+            if (n >= 4) { stopReason = "death-loop"; break; }
           }
           continue;
         }
@@ -176,14 +192,15 @@ export class ChatRuntime {
         break;
       }
       if (!text && steps.length) {
-        // tool-loop limit reached mid-task: ask for a progress wrap-up instead of stopping cold
+        // stopped without a final answer (deadline / death-loop): wrap up instead of stopping cold
         try {
+          const clean = messages.filter((_m, i) => i !== remIdx);
           const wrap = await chatOnce({
             baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: opts.model ?? resolved.model.id, effort: "low",
-            messages: [...messages, { role: "user", content: "You reached the tool-loop limit. Summarize what you completed and exactly what remains to continue." }],
+            messages: [...clean, { role: "user", content: "Stop the tool loop. Summarize what you completed and exactly what remains to continue." }],
           });
-          text = String(wrap?.choices?.[0]?.message?.content ?? "").trim() || "(loop limit reached)";
-        } catch { text = "(loop limit reached)"; }
+          text = String(wrap?.choices?.[0]?.message?.content ?? "").trim() || "(stopped early: " + (stopReason || "unknown") + ")";
+        } catch { text = "(stopped early: " + (stopReason || "unknown") + ")"; }
       }
     } catch (err) {
       // model/loop failure mid-way: surface partial progress
