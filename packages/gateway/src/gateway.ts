@@ -874,8 +874,11 @@ export class Gateway {
     let upstream: WebSocket;
     try { upstream = new WebSocket(cfg.realtime.url); } catch { try { ws.close(1011, "bad realtime url"); } catch { /* noop */ } return; }
     let closed = false;
+    const queue: Array<[Buffer, boolean]> = [];
+    const flush = () => { for (const [b, isBin] of queue) { if (upstream.readyState === WebSocket.OPEN) upstream.send(b, { binary: isBin }); } queue.length = 0; };
+    upstream.on("open", flush);
     const done = () => { if (closed) return; closed = true; try { ws.close(); } catch { /* noop */ } try { upstream.close(); } catch { /* noop */ } };
-    ws.on("message", (raw: Buffer, isBinary: boolean) => { if (upstream.readyState === WebSocket.OPEN) upstream.send(raw, { binary: isBinary }); });
+    ws.on("message", (raw: Buffer, isBinary: boolean) => { if (upstream.readyState === WebSocket.OPEN) upstream.send(raw, { binary: isBinary }); else queue.push([raw as Buffer, !!isBinary]); });
     ws.on("close", done);
     ws.on("error", done);
     upstream.on("message", (raw: Buffer, isBinary: boolean) => { if (ws.readyState === WebSocket.OPEN) ws.send(raw, { binary: isBinary }); });
