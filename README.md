@@ -128,7 +128,9 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 35. ✅ Security hardening: `Permissions-Policy` locks every capability except the mic (camera/display-capture/geolocation/clipboard denied — needed for browser dictation); strict HSTS header on TLS responses; header contract + ETag/gzip revalidation locked by tests (47/47)
 36. ✅ Chat pagination: `chat.history` returns windowed pages (`limit` + `since`); the GUI renders the newest 60 bubbles and lazily prepends older pages via a "Load earlier messages" button — long sessions no longer build a huge DOM (no browser lag).
 37. ✅ Agent-loop transparency: every tool call (exec commands, file edits, attempted/failed calls) streams live into a collapsible “Ran N steps” panel inside the assistant bubble with argument previews, and the loop now runs up to 30 turns; at the limit the model is asked for a “what is done / what remains” wrap-up instead of stopping cold. Persisted with the chat entry (`data.steps`).
-38. Next: npm publish (deferred by user)
+38. ✅ Agent-loop autonomy: the chat loop no longer has a turn limit — the model decides when it is done. A dsh-style `<system-reminder>` is re-injected every turn keeping it focused on finishing, guarded only by a 30-minute wall-clock deadline and a death-loop detector (the same call 4x). If a guard trips, the model writes a “done vs remaining” wrap-up instead of stopping cold.
+39. ✅ Realtime voice view (Jarvis mode): new GUI tab with a persistent mic<->LFM3 realtime relay through the gateway (`/voice` ws), server-side VAD, live transcripts of both speakers, a mic mute that keeps the session alive, and “send transcript to chat”. Messages queued until the upstream opens.
+40. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
