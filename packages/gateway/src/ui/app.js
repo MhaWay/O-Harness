@@ -369,7 +369,10 @@ function showView(name) {
   function addCopy(metaHost, text) {
     var b = document.createElement("button");
     b.className = "ghost"; b.textContent = "copy"; b.style.cssText = "margin-left:6px;padding:1px 7px;font-size:11px";
-    b.onclick = function () { copyText(text).then(function () { b.textContent = "copied"; setTimeout(function () { b.textContent = "copy" }, 1500) }).catch(function () { toast("copy failed", "err") }) };
+    b.onclick = function () {
+      var ok = copyText(text);
+      if (ok) { b.textContent = "copied"; setTimeout(function () { b.textContent = "copy" }, 1500) } else toast("copy failed", "err")
+    };
     metaHost.appendChild(b);
   }
   function addRegen(metaHost) {
