@@ -835,7 +835,7 @@ function showView(name) {
       var jobs = await rpc("schedule.list", {}) || [];
       host.innerHTML =
         '<h2 class="sec">Scheduler</h2>' +
-        '<div class="row"><input id="jLabel" placeholder="label (optional)" style="flex:1"><select id="jKind" class="noflex"><option value="chat">chat message</option><option value="minion">minion task</option></select><input id="jSession" class="noflex" placeholder="session (chat)" style="width:120px;display:none"></div>' +
+        '<div class="row"><input id="jLabel" placeholder="label (optional)" style="flex:1"><select id="jKind" class="noflex"><option value="chat">chat message</option><option value="minion">minion task</option></select><input id="jSession" class="noflex" placeholder="session (chat)" style="width:120px"></div>' +
         '<div class="row"><textarea id="jMsg" placeholder="message…" style="width:100%;min-height:34px"></textarea></div>' +
         '<div class="row"><select id="jType" class="noflex"><option value="every">every...</option><option value="daily">daily at...</option><option value="once">once at...</option></select>' +
         '<input id="jEvery" type="number" placeholder="minutes" value="60" style="width:110px"><input id="jTime" type="time" value="09:00" style="display:none"><input id="jAt" type="datetime-local" style="display:none">' +
