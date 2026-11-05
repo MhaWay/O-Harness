@@ -364,7 +364,7 @@
     $("mInput").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
     $("mInput").addEventListener("input", function () { autosize(this); });
     $("mNewBtn").onclick = newChat;
-    $("mSessions").onchange = function () { sessId = this.value; localStorage.setItem("oh.msess", sessId); loadChat(); };
+    $("mSessions").onchange = function () { sessId = this.value; localStorage.setItem("oh.msess", sessId); loadChat(); loadSessions(); };
     function curSession() { var A = window.__ohSessions || []; for (var i = 0; i < A.length; i++) { if (A[i].id === sessId) return A[i] } return null; }
     $("mPinBtn").onclick = async function () {
       var s = curSession();
