@@ -5,12 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Gateway } from "../src/gateway.ts";
 
-const port = 19161;
+// undici keeps a global keep-alive pool; reusing one fixed port across
+// gw restarts reuses a socket to the dead server -> "other side closed".
+// Bump the port per gateway boot so every test opens a fresh connection.
+let portN = 19161;
 let gw: Gateway | null = null;
 afterEach(async () => { try { await gw?.stop(); } catch { /* not up */ } gw = null; });
 
 async function withGateway(fn: (base: string) => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "oh-http-"));
+  const port = portN++;
   gw = new Gateway({ port, host: "127.0.0.1", plugins: [], tls: "off", overlay: "off" }, dir);
   await gw.start();
   try { await fn("http://127.0.0.1:" + port); } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -23,7 +27,7 @@ describe("http surface", () => {
       assert.equal(r.status, 200);
       const j = await r.json();
       assert.equal(j.ok, true);
-      assert.equal(j.port, port);
+      assert.equal(j.port, Number(new URL(base).port));
       assert.equal(j.pid, process.pid);
       assert.equal(typeof j.protocol, "number");
       assert.equal(typeof j.others, "number");
