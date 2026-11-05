@@ -160,18 +160,39 @@
   function stopChat() {
     window.OH.rpc("chat.abort", { sessionId: sessId }).then(function (r) { toast(r && r.ok ? "stopping…" : "not running"); }).catch(function (e) { toast(String(e)); });
   }
-  function sendChat() {
+  var SLASH = [["help","list commands"],["new","start a new session"],["rename <t>","rename current session"],["thinking <l>","effort: none|low|medium|xhigh"],["models","show configured models"],["memory <q>","search durable memory"],["export","download session markdown"],["pin","pin this session"],["archive","hide this session from the list"],["unarchive","restore an archived session"],["stop","stop generation"]];
+  function slashInfo(html) { bubble("assistant", html, "system"); }
+  async function slashRun(msg) {
+    var sp0 = msg.slice(1).trim();
+    var sp = sp0.indexOf(" "); var cmd = (sp < 0 ? sp0 : sp0.slice(0, sp)).toLowerCase(); var arg = sp < 0 ? "" : sp0.slice(sp + 1).trim();
+    if (cmd === "help") { slashInfo("<b>slash commands</b><br>" + SLASH.map(function (c) { return "/<b>" + c[0] + "</b> <span class='dim'>" + c[1] + "</span>" }).join("<br>")); return true }
+    if (cmd === "new") { var s = await window.OH.rpc("sessions.create", { title: "chat " + new Date().toISOString().slice(11, 16) }); sessId = s.id; localStorage.setItem("oh.msess", s.id); loadSessions(); loadChat(); slashInfo("started session " + esc(String(s.id).slice(0, 8))); return true }
+    if (cmd === "rename") { if (!arg) { slashInfo("usage: /rename &lt;title&gt;"); return true } await window.OH.rpc("sessions.rename", { id: sessId, title: arg }); loadSessions(); slashInfo("renamed to <b>" + esc(arg) + "</b>"); return true }
+    if (cmd === "thinking") { var lv = arg.toLowerCase(); if (["none","low","medium","xhigh"].indexOf(lv) < 0) { slashInfo("usage: /thinking none|low|medium|xhigh"); return true } localStorage.setItem("oh.effort", lv); slashInfo("effort set to <b>" + lv + "</b>"); return true }
+    if (cmd === "models") { var st = await window.OH.rpc("settings.get", {}); var def = (st.default || {}).modelId; var lines = []; (st.providers || []).forEach(function (p) { (p.models || []).forEach(function (mod) { lines.push(mod.id === def ? "<b>" + esc(mod.id) + "</b> (" + esc(p.id) + ")" : esc(mod.id) + " <span class='dim'>" + esc(p.id) + "</span>") }) }); slashInfo(lines.length ? lines.join("<br>") : "no models configured"); return true }
+    if (cmd === "memory") { if (!arg) { slashInfo("usage: /memory &lt;query&gt;"); return true } var hits = (await window.OH.rpc("memory.search", { query: arg, limit: 8 })) || []; var out = hits.map(function (h) { var t = (h.memory && h.memory.text) || h.text || ""; return "· " + esc(String(t).slice(0, 160)) }).join("<br>"); slashInfo(hits.length ? out : "no memory matches <i>" + esc(arg) + "</i>"); return true }
+    if (cmd === "export") { window.location.href = "/sessions/export?session=" + encodeURIComponent(sessId); slashInfo("downloading session…"); return true }
+    if (cmd === "pin") { var lst = (await window.OH.rpc("sessions.list", {})) || []; var cur = lst.filter(function (x) { return x.id === sessId })[0]; await window.OH.rpc("sessions.pin", { id: sessId, pinned: !(cur && cur.pinned) }); loadSessions(); slashInfo("session " + (cur && cur.pinned ? "unpinned" : "pinned")); return true }
+    if (cmd === "archive") { await window.OH.rpc("sessions.archive", { id: sessId, archived: true }); loadSessions(); slashInfo("session archived — use /unarchive to restore"); return true }
+    if (cmd === "unarchive") { await window.OH.rpc("sessions.archive", { id: sessId, archived: false }); loadSessions(); slashInfo("session restored"); return true }
+    if (cmd === "stop") { stopChat(); slashInfo("stopping…"); return true }
+    return false
+  }
+  async function sendChat() {
     if (busy) { stopChat(); return; }
     var inp = $("mInput");
     var text = (inp.value || "").trim();
     if (!text) return;
+    if (text.charAt(0) === "/" && /^\/[a-zA-Z]+(\s|$)/.test(text)) {
+      var handled; try { handled = await slashRun(text); } catch (er) { toast(String(er), "err"); return } if (handled) return;
+    }
     busy = true; inp.value = ""; autosize(inp);
     bubble("user", esc(text));
     streamingMsg = null;
     var b = bubble("assistant", "<div class='md'>…</div>");
     streamingMsg = { node: b, buf: "", rbuf: "", think: null };
     var sb = $("mSendBtn"); if (sb) { sb.textContent = "Stop"; sb.title = "stop generation"; }
-    window.OH.rpc("chat.send", { sessionId: sessId, message: text }).then(function (r) {
+    window.OH.rpc("chat.send", { sessionId: sessId, message: text, effort: localStorage.getItem("oh.effort") || undefined }).then(function (r) {
       streamingMsg = null;
       var t = r && r.text ? r.text : "";
       var md = b.querySelector(".md"); if (md) md.textContent = t; else b.innerHTML = esc(t);
