@@ -245,7 +245,13 @@ export class Gateway {
     this.rpc.set(Methods.DeviceFsWrite, (p) => this.#callDevice(p?.deviceId ?? "local", "fs.write", p));
 
     // sessions: persistent and shared across devices — all views the same log
-    this.rpc.set(Methods.SessionsList, (p) => this.sessions.list({ includeArchived: Boolean(p?.includeArchived) }).map((s) => { const full = this.sessions.get(String(s.id)); return { ...s, entryCount: full ? full.entries.length : 0, chat: (full?.entries.some((e) => e.kind === "chat") ?? false) }; }));
+    this.rpc.set(Methods.SessionsList, (p) => this.sessions.list({ includeArchived: Boolean(p?.includeArchived) }).map((s) => {
+      const full = this.sessions.get(String(s.id));
+      const chats = full ? full.entries.filter((e) => e.kind === "chat") : [];
+      const last = chats[chats.length - 1];
+      const lastText = last ? String((last.data as { text?: unknown })?.text ?? "").slice(0, 120) : "";
+      return { ...s, entryCount: full ? full.entries.length : 0, chat: (full?.entries.some((e) => e.kind === "chat") ?? false), lastMessage: lastText || undefined };
+    }));
     this.rpc.set(Methods.SessionsArchive, (p) => {
       const id = String(p?.id ?? "");
       const on = p?.archived === undefined ? true : Boolean(p.archived);
