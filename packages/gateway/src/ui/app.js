@@ -124,7 +124,7 @@
     return out.join("");
   }
   window.md = md;
-  var S = { view: "chat", session: "main", sessions: [], settings: null, minions: [], streaming: null, loaded: false };
+  var S = { view: "chat", session: "main", sessions: [], settings: null, minions: [], streaming: null, loaded: false, showArchived: false };
   var rpc = window.OH.rpc;
   var views = {
     overview: loadOverview, sessions: loadSessions, minions: loadMinions,
@@ -619,14 +619,14 @@ function showView(name) {
     if (!host) return;
     var skip = {};
     S.minions.forEach(function (m) { if (m.sessionId) skip[m.sessionId] = 1 });
-    var chatSessions = S.sessions.filter(function (s) { return !skip[s.id] && s.chat !== false });
+    var chatSessions = S.sessions.filter(function (s) { return !skip[s.id] && s.chat !== false && !s.archived });
     chatSessions.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0) });
     host.innerHTML = chatSessions.slice(0, 12).map(function (s) {
       return '<div class="srow ' + (s.id === S.session ? "on" : "") + '" data-open="' + esc(s.id) + '">' + esc(s.title || s.id) + "</div>";
     }).join("") || '<div class="dim" style="padding:6px 8px">none yet</div>';
   }
   async function loadSessionsCount() {
-    try { S.sessions = await rpc("sessions.list", {}) || [] } catch (e) { return }
+    try { S.sessions = await rpc("sessions.list", { includeArchived: !!S.showArchived }) || [] } catch (e) { return }
     renderMiniSessions();
     renderStatusFoot();
   }
@@ -712,11 +712,11 @@ function showView(name) {
   async function loadSessions() {
     await loadSessionsCount();
     $("#v-sessions").innerHTML =
-      '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button><input id="sessQ" placeholder="search sessions... (Enter)" style="flex:1"><button class="ghost" id="sessQGo">Search</button></div><div id="sessHits"></div>' +
+      '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button><input id="sessQ" placeholder="search sessions... (Enter)" style="flex:1"><button class="ghost" id="sessQGo">Search</button><label class="dim" style="font-size:12px;display:inline-flex;align-items:center;gap:4px;margin-left:8px"><input type="checkbox" id="showArchived"' + (S.showArchived ? " checked" : "") + ' style="width:auto"> archived</label></div><div id="sessHits"></div>' +
       "<table><tr><th>title</th><th>id</th><th>entries</th><th>created</th><th></th></tr>" +
       S.sessions.slice().sort(function (a, b) { return (Number(!!b.pinned) - Number(!!a.pinned)) || (b.createdAt - a.createdAt) }).map(function (s) {
-        return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button> <button class='ghost' data-pin='" + esc(String(s.id)) + "' title='" + (s.pinned ? "unpin" : "pin") + "'>" + (s.pinned ? "📌" : "📍") + "</button> <a class='ghost' download style='text-decoration:none;padding:4px 8px' title='download markdown' href=\"/sessions/export?session=" + encodeURIComponent(String(s.id)) + "&token=" + encodeURIComponent(window.OH.getToken()) + "\">⬇</a>" +
-          (String(s.id) !== "main" ? " <button class='ghost' data-rename='" + esc(s.id) + "' title='rename'>✎</button> <button class='ghost' data-del='" + esc(s.id) + "' title='delete session'>✕</button>" : "") + "</td></tr>";
+        return "<tr" + (s.archived ? " class='dim'" : "") + "><td>" + esc(s.title) + (s.archived ? " <span class='tag'>archived</span>" : "") + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button> <button class='ghost' data-pin='" + esc(String(s.id)) + "' title='" + (s.pinned ? "unpin" : "pin") + "'>" + (s.pinned ? "📌" : "📍") + "</button> <a class='ghost' download style='text-decoration:none;padding:4px 8px' title='download markdown' href=\"/sessions/export?session=" + encodeURIComponent(String(s.id)) + "&token=" + encodeURIComponent(window.OH.getToken()) + "\">⬇</a>" +
+          (String(s.id) !== "main" ? " <button class='ghost' data-rename='" + esc(s.id) + "' title='rename'>✎</button> <button class='ghost' data-arch='" + esc(s.id) + "' title='" + (s.archived ? "unarchive" : "archive (hide from list)") + "'>" + (s.archived ? "♻" : "🗃") + "</button> <button class='ghost' data-del='" + esc(s.id) + "' title='delete session'>✕</button>" : "") + "</td></tr>";
       }).join("") + "</table>";
     $("#newSessBtn").onclick = function () {
       modal("New session", '<div class="row"><input type="text" id="nsTitle" placeholder="session title" style="flex:1"></div>', async function () {
@@ -767,9 +767,19 @@ function showView(name) {
     };
     $("#sessQGo").onclick = runSessSearch;
     $("#sessQ").onkeydown = function (ev) { if (ev.key === "Enter") runSessSearch() };
+    var sa = $("#showArchived"); if (sa) { sa.checked = S.showArchived; sa.onchange = function () { S.showArchived = sa.checked; loadSessions(); }; }
     $$("#v-sessions [data-pin]").forEach(function (b) {
       b.onclick = async function () {
         await rpc("sessions.pin", { id: b.dataset.pin, pinned: !((S.sessions.filter(function (x) { return String(x.id) === b.dataset.pin })[0] || {}).pinned) });
+        await loadSessionsCount(); if (S.view === "sessions") loadSessions();
+      };
+    });
+    $$("#v-sessions [data-arch]").forEach(function (b) {
+      b.onclick = async function () {
+        var cur = !!((S.sessions.filter(function (x) { return String(x.id) === b.dataset.arch })[0] || {})).archived;
+        var o = await rpc("sessions.archive", { id: b.dataset.arch, archived: !cur });
+        if (!o || !o.ok) return toast("unknown session", true);
+        toast(cur ? "session unarchived" : "session archived - use the archived filter to restore it");
         await loadSessionsCount(); if (S.view === "sessions") loadSessions();
       };
     });

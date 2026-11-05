@@ -17,6 +17,8 @@ export interface Session {
   createdAt: number;
   entries: SessionEntry[];
   pinned?: boolean;
+  /** Soft-hidden: kept out of list() unless includeArchived (sessions stay fully readable/usable). */
+  archived?: boolean;
 }
 
 export class SessionsStore {
@@ -51,17 +53,28 @@ export class SessionsStore {
 
   get(id: string): Session | undefined { return this.#sessions.get(id); }
 
-  list() {
+  list(filter: { includeArchived?: boolean } = {}) {
     return [...this.#sessions.values()]
+      .filter((s) => filter.includeArchived || !s.archived)
       .sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || (b.createdAt - a.createdAt))
       .map((s) => ({
         id: s.id,
         title: s.title,
         createdAt: s.createdAt,
         pinned: !!s.pinned,
+        archived: !!s.archived,
         count: s.entries.length,
         lastEntry: s.entries.length ? s.entries[s.entries.length - 1] : undefined,
       }));
+  }
+
+  /** Soft-archive a session (out of default lists; get/append/chat keep working). Returns false if unknown. */
+  archive(id: string, archived = true): boolean {
+    const s = this.#sessions.get(id);
+    if (!s) return false;
+    if (archived) s.archived = true; else delete s.archived;
+    this.#persist(id);
+    return true;
   }
 
   append(id: string, partial: Omit<SessionEntry, "seq">): SessionEntry {

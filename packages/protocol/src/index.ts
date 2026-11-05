@@ -35,6 +35,7 @@ export const Methods = {
   MemoryAdd: "memory.add",
   MemoryConsolidate: "memory.consolidate",
   MemoryForget: "memory.forget",
+  SessionsArchive: "sessions.archive",
   PairingCreate: "pairing.create",
   PairingList: "pairing.list",
   PairingRevoke: "pairing.revoke",

@@ -72,7 +72,7 @@ export async function main(args: string[]): Promise<void> {
       "memory add|search|list|consolidate                  durable temporal memory",
       "pair create|list|revoke|redeem                      pairing codes + device secrets with scopes",
       "tools list|call|pending|respond / grants            device-offered tools + approvals",
-      "sessions list / sessions search <text> / session show|create|append|export   session logs",
+      "sessions list [--archived] / sessions search <text> / session show|create|append|export|archive|unarchive   session logs",
       "node connect [--url wss://..] [--insecure]          run a node that connects to a gateway",
     ].join("\n"));
     return;
@@ -637,7 +637,8 @@ export async function main(args: string[]): Promise<void> {
       console.log((hits.length || 0) + " sessions matching \"" + q + "\"");
       return;
     }
-    const list = await callOnce("sessions.list", undefined, port);
+    const inc = rest.includes("--archived");
+    const list = await callOnce("sessions.list", inc ? { includeArchived: true } : undefined, port);
     console.log(JSON.stringify(list, null, 2));
     return;
   }
@@ -686,6 +687,11 @@ export async function main(args: string[]): Promise<void> {
     if (sub === "pin" || sub === "unpin") {
       const o = await callOnce("sessions.pin", { id, pinned: sub === "pin" }, port) as { ok: boolean };
       console.log(o.ok ? (sub === "pin" ? "pinned " : "unpinned ") + id : "unknown session: " + id);
+      return;
+    }
+    if (sub === "archive" || sub === "unarchive") {
+      const o = await callOnce("sessions.archive", { id, archived: sub === "archive" }, port) as { ok: boolean };
+      console.log(o.ok ? (sub === "archive" ? "archived " : "unarchived ") + id + " (still readable via sessions.list --archived)" : "unknown session: " + id);
       return;
     }
     throw new Error("usage: o-h session show|create|append|rename|delete [--id <id>] [--title t] [--kind k] [text]");
