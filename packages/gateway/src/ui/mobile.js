@@ -5,6 +5,7 @@
   var sessId = localStorage.getItem("oh.msess") || "main";
   var autoSpeak = localStorage.getItem("oh.autospeak") !== "off";
   var busy = false, streamingMsg = null, asks = [];
+  var earliestSeq = 0, loadingEarlier = false, PAGE = 60;
 
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
   function toast(m, kind) {
@@ -269,9 +270,14 @@
   function loadChat() {
     $("chatLog").innerHTML = "";
     streamingMsg = null;
-    window.OH.rpc("chat.history", { sessionId: sessId }).then(function (es) {
-      (es || []).forEach(function (e) {
-        var b = bubble(e.role === "user" ? "user" : "assistant", esc(e.text || ""), (e.seq ? e.seq + " · " + (e.role || "") : ""));
+    earliestSeq = 0;
+    window.OH.rpc("chat.history", { sessionId: sessId, limit: PAGE }).then(function (es) {
+      (es || []).forEach(function (e) { buildBubble(e) });
+      if (es && es.length >= PAGE) { earliestSeq = es[0].seq; addEarlier(); }
+    }).catch(function () { });
+  }
+  function buildBubble(e) {
+      var b = bubble(e.role === "user" ? "user" : "assistant", esc(e.text || ""), (e.seq ? e.seq + " · " + (e.role || "") : ""));
         if (e.role !== "user") {
           var mt = b.querySelector(".meta");
           if (mt) {
@@ -298,8 +304,33 @@
             var mdr = b.querySelector(".md"); if (b.contains(mdr)) b.insertBefore(det, mdr && mdr.parentNode === b ? mdr : b.firstChild);
           }
         }
-      });
-    }).catch(function () { });
+    return b;
+  }
+  function addEarlier() {
+    if (!earliestSeq || $("mEarlier")) return;
+    var b = document.createElement("button");
+    b.id = "mEarlier"; b.className = "ghostbtn"; b.textContent = "load earlier messages";
+    b.style.cssText = "margin:4px auto;display:block";
+    b.onclick = loadEarlier;
+    $("chatLog").insertBefore(b, $("chatLog").firstChild);
+  }
+  function loadEarlier() {
+    if (!earliestSeq || loadingEarlier) return;
+    loadingEarlier = true;
+    var log = $("chatLog"); var prev = log.scrollHeight - log.scrollTop;
+    var eb = $("mEarlier"); if (eb) eb.textContent = "loading…";
+    window.OH.rpc("chat.history", { sessionId: sessId, limit: PAGE, since: earliestSeq }).then(function (h) {
+      if (h && h.length) {
+        var frag = document.createDocumentFragment();
+        for (var i = 0; i < h.length; i++) frag.appendChild(buildBubble(h[i]));
+        log.insertBefore(frag, log.firstChild);
+        earliestSeq = h.length >= PAGE ? h[0].seq : 0;
+      } else earliestSeq = 0;
+      var eb2 = $("mEarlier"); if (eb2) eb2.remove();
+      if (earliestSeq) addEarlier();
+      log.scrollTop = log.scrollHeight - prev;
+      loadingEarlier = false;
+    }).catch(function () { loadingEarlier = false; });
   }
   function regenChat() {
     if (busy) { stopChat(); return; }
@@ -453,6 +484,17 @@
       if (!s) { toast("open a chat first"); return; }
       var t = prompt("session title", s.title || "");
       if (t && t.trim()) { try { await window.OH.rpc("sessions.rename", { id: s.id, title: t.trim() }); toast("renamed", "ok"); loadSessions(); } catch (e) { toast(String(e)); } }
+    };
+    $("mDelBtn").onclick = async function () {
+      var s = await liveSession();
+      if (!s) { toast("open a chat first"); return; }
+      if (s.id === "main") { toast("main cannot be deleted", "err"); return; }
+      if (!confirm("delete '" + (s.title || s.id) + "' (" + (s.entryCount || 0) + " entries)? not recoverable")) return;
+      try {
+        var r = await window.OH.rpc("sessions.delete", { id: s.id });
+        if (r && r.ok) { toast("deleted", "ok"); sessId = "main"; localStorage.setItem("oh.msess", "main"); loadSessions(); loadChat(); }
+        else toast("delete refused", "err");
+      } catch (e) { toast(String(e)); }
     };
     $("mMicBtn").onclick = micToggle;
     $("mSpeakBtn").onclick = function () { autoSpeak = !autoSpeak; localStorage.setItem("oh.autospeak", autoSpeak ? "on" : "off"); this.classList.toggle("on", autoSpeak); };
