@@ -1258,9 +1258,11 @@ function showView(name) {
     $("#chatInput").addEventListener("keydown", function (e) {
       if (slashOpen()) {
         if (e.key === "Escape") { e.preventDefault(); slashHide(); return }
-        if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); slashPick(this); return }
-        if (e.key === "ArrowUp") { e.preventDefault(); slashMove(-1); return }
-        if (e.key === "ArrowDown") { e.preventDefault(); slashMove(1); return }
+        if (e.key === "Tab" || e.key === "Enter") {
+          if (e.key === "Enter" && ("/" + slashList[slashSel]) === this.value.trim()) { slashHide() }
+          else { e.preventDefault(); slashPick(this); return }
+        } else if (e.key === "ArrowUp") { e.preventDefault(); slashMove(-1); return }
+        else if (e.key === "ArrowDown") { e.preventDefault(); slashMove(1); return }
       }
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); return }
       if (e.key === "ArrowUp" && this.selectionStart === 0 && this.selectionEnd === 0 && this.value.indexOf("\n") === -1) {
