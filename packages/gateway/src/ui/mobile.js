@@ -171,7 +171,12 @@
     if (cmd === "thinking") { var lv = arg.toLowerCase(); if (["none","low","medium","xhigh"].indexOf(lv) < 0) { slashInfo("usage: /thinking none|low|medium|xhigh"); return true } localStorage.setItem("oh.effort", lv); slashInfo("effort set to <b>" + lv + "</b>"); return true }
     if (cmd === "models") { var st = await window.OH.rpc("settings.get", {}); var def = (st.default || {}).modelId; var lines = []; (st.providers || []).forEach(function (p) { (p.models || []).forEach(function (mod) { lines.push(mod.id === def ? "<b>" + esc(mod.id) + "</b> (" + esc(p.id) + ")" : esc(mod.id) + " <span class='dim'>" + esc(p.id) + "</span>") }) }); slashInfo(lines.length ? lines.join("<br>") : "no models configured"); return true }
     if (cmd === "memory") { if (!arg) { slashInfo("usage: /memory &lt;query&gt;"); return true } var hits = (await window.OH.rpc("memory.search", { query: arg, limit: 8 })) || []; var out = hits.map(function (h) { var t = (h.memory && h.memory.text) || h.text || ""; return "· " + esc(String(t).slice(0, 160)) }).join("<br>"); slashInfo(hits.length ? out : "no memory matches <i>" + esc(arg) + "</i>"); return true }
-    if (cmd === "export") { window.location.href = "/sessions/export?session=" + encodeURIComponent(sessId); slashInfo("downloading session…"); return true }
+    if (cmd === "export") {
+      var eu = "/sessions/export?session=" + encodeURIComponent(sessId);
+      var tk = window.OH.getToken(); if (tk) eu += "&token=" + encodeURIComponent(tk);
+      var secE = localStorage.getItem(SECRET_KEY); if (secE) eu += "&secret=" + encodeURIComponent(secE);
+      window.location.href = eu; slashInfo("downloading session…"); return true
+    }
     if (cmd === "pin") { var lst = (await window.OH.rpc("sessions.list", {})) || []; var cur = lst.filter(function (x) { return x.id === sessId })[0]; await window.OH.rpc("sessions.pin", { id: sessId, pinned: !(cur && cur.pinned) }); loadSessions(); slashInfo("session " + (cur && cur.pinned ? "unpinned" : "pinned")); return true }
     if (cmd === "archive") { await window.OH.rpc("sessions.archive", { id: sessId, archived: true }); loadSessions(); slashInfo("session archived — use /unarchive to restore"); return true }
     if (cmd === "unarchive") { await window.OH.rpc("sessions.archive", { id: sessId, archived: false }); loadSessions(); slashInfo("session restored"); return true }
@@ -179,7 +184,13 @@
     return false
   }
   async function sendChat() {
-    if (busy) { stopChat(); return; }
+    if (busy) {
+      var bt = ($("mInput").value || "").trim();
+      if (bt.charAt(0) === "/" && /^\/[a-zA-Z]+(\s|$)/.test(bt)) {
+        var bh; try { bh = await slashRun(bt); } catch (er2) { toast(String(er2), "err"); return } if (bh) { $("mInput").value = ""; autosize($("mInput")); return };
+      }
+      stopChat(); return;
+    }
     var inp = $("mInput");
     var text = (inp.value || "").trim();
     if (!text) return;
