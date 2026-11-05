@@ -259,6 +259,8 @@ export class Gateway {
         const merged = { ...d, ...({} as Record<string, unknown>) };
         if (p.alias) merged.name = p.alias;
         const meta = { ...((d.meta ?? {}) as Record<string, unknown>) };
+        if (p.alias) meta.alias = p.alias;
+        if (Array.isArray(p.allow)) meta.allow = p.allow;
         if (p.note) meta.note = p.note;
         if (p.trusted) meta.trusted = true;
         if (p.notifications?.enabled) meta.notifications = p.notifications;
