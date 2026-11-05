@@ -210,7 +210,7 @@ function showView(name) {
     }
     if (e.role === "assistant") {
       var mh = bbl.querySelector(".meta");
-      if (mh) { addPlay(mh, e.text); addRegen(mh); }
+      if (mh) { addPlay(mh, e.text); addCopy(mh, e.text); addRegen(mh); }
     }
     return bbl;
   }
@@ -363,8 +363,14 @@ function showView(name) {
     var thk = parent && parent.querySelector("details.think");
     if (thk) { thk.open = false; thk.querySelector("summary").textContent = S.think ? "Thoughts" : "Thinking..."; if (!S.think) thk.remove(); }
     var metaHost = parent && parent.querySelector(".meta");
-    if (metaHost) { addPlay(metaHost, text); addRegen(metaHost); }
+    if (metaHost) { addPlay(metaHost, text); addCopy(metaHost, text); addRegen(metaHost); }
     if (V.autoSpeak) speakText(text);
+  }
+  function addCopy(metaHost, text) {
+    var b = document.createElement("button");
+    b.className = "ghost"; b.textContent = "copy"; b.style.cssText = "margin-left:6px;padding:1px 7px;font-size:11px";
+    b.onclick = function () { copyText(text).then(function () { b.textContent = "copied"; setTimeout(function () { b.textContent = "copy" }, 1500) }).catch(function () { toast("copy failed", "err") }) };
+    metaHost.appendChild(b);
   }
   function addRegen(metaHost) {
     var b = document.createElement("button");
