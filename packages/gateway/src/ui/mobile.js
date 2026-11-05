@@ -203,10 +203,23 @@
       (es || []).forEach(function (e) {
         var b = bubble(e.role === "user" ? "user" : "assistant", esc(e.text || ""), (e.seq ? e.seq + " · " + (e.role || "") : ""));
         if (e.role !== "user") {
-          var bt = document.createElement("button"); bt.className = "ghostbtn"; bt.textContent = "again";
-          bt.style.cssText = "margin-left:6px;font-size:11px;padding:1px 7px";
-          bt.onclick = function () { regenChat(); };
-          var mt = b.querySelector(".meta"); if (mt) mt.appendChild(bt);
+          var mt = b.querySelector(".meta");
+          if (mt) {
+            var cp = document.createElement("button"); cp.className = "ghostbtn"; cp.textContent = "copy";
+            cp.style.cssText = "margin-left:6px;font-size:11px;padding:1px 7px";
+            var txt = e.text || "";
+            cp.onclick = function () {
+              var ok = false;
+              try { ok = document.execCommand ? (function () { var ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.left = "-9999px"; document.body.appendChild(ta); ta.select(); var r = false; try { r = document.execCommand("copy") } catch (err) { } ta.remove(); return r })() : false } catch (err) { ok = false }
+              if (!ok && navigator.clipboard) { navigator.clipboard.writeText(txt); ok = true }
+              if (ok) { cp.textContent = "copied"; setTimeout(function () { cp.textContent = "copy" }, 1500) } else toast("copy failed")
+            };
+            mt.appendChild(cp);
+            var bt = document.createElement("button"); bt.className = "ghostbtn"; bt.textContent = "again";
+            bt.style.cssText = "margin-left:6px;font-size:11px;padding:1px 7px";
+            bt.onclick = function () { regenChat(); };
+            mt.appendChild(bt);
+          }
         }
       });
     }).catch(function () { });
