@@ -161,7 +161,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 68. ✅ Mobile tool-approval dashboard, part 2: the `/m` Tools view now also lists **standing grants** (with a revoke button) and **devices offering tools**, so approvals, grants and the device map are visible from the phone — same RPC surface as the desktop Tools view.
 69. ✅ Mobile Device tab: the `/m` *Device* view lists other registered devices (online/offline) and all pairings — active ones with a **revoke pairing** button (`pairing.revoke`, with confirm), revoked ones marked — completing the device/pairing parity with the desktop Devices view.
 70. ✅ Scheduler job kinds from the GUI: the Scheduler view now exposes a **chat message vs minion task** selector (and a session field for chat jobs), so scheduled background work is fully creatable from the browser — no CLI needed.
-71. Next: npm publish (deferred by user)
+71. ✅ Mobile job kinds: the `/m` job form now offers **chat message vs minion task** (same `schedule.create` surface), matching the desktop scheduler.
+72. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
