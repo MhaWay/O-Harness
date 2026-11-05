@@ -411,28 +411,48 @@
   function loadMemory() {
     var host = $("sec-memory");
     window.OH.rpc("memory.list", { limit: 50 }).then(function (ms) {
-      var html = "<div class='card'><h3>Search</h3><input id='mQ' placeholder='search memory…'><button id='mSearch' class='primary' style='width:100%'>Search</button></div>";
+      var html = "<div class='card'><h3>Search</h3><input id='mmQ' placeholder='search memory…'><button id='mSearch' class='primary' style='width:100%'>Search</button></div>";
+      html += "<div class='card'><h3>Add</h3><input id='mmAdd' placeholder='remember this…' style='width:100%'><div style='margin-top:6px;display:flex;gap:6px'><button id='mmSave' class='ghostbtn'>save</button><button id='mmCons' class='ghostbtn'>consolidate</button></div></div>";
       html += "<div class='card'><h3>Recent</h3>";
       (ms || []).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).slice(0, 40).forEach(function (m) {
-        html += "<div class='mrow'><b>" + esc(m.subject || "") + "</b> <span class='badge'>" + esc(m.layer || "") + "</span> <span class='dim'>" + Math.round((m.importance || 0) * 100) + "%</span><br><span>" + esc(m.text || "") + "</span></div>";
+        html += "<div class='mrow'><b>" + esc(m.subject || "") + "</b> <span class='badge'>" + esc(m.layer || "") + "</span> <span class='dim'>" + Math.round((m.importance || 0) * 100) + "%</span><br><span>" + esc(m.text || "") + "</span><div style='margin-top:4px'><button class='ghostbtn' data-mdel='" + esc(m.id || "") + "'>forget</button></div></div>";
       });
       html += "</div>";
       host.innerHTML = html;
+      function wireRows() {
+        host.querySelectorAll("[data-mdel]").forEach(function (b) { b.onclick = function () {
+          if (!confirm("forget this memory?")) return;
+          window.OH.rpc("memory.forget", { id: b.dataset.mdel }).then(function (r) {
+            toast(r && r.ok ? "forgotten (kept for history)" : "unknown memory id", r && r.ok ? "ok" : "err");
+            loadMemory();
+          });
+        }; });
+      }
+      wireRows();
+      $("mmSave").onclick = function () {
+        var t = $("mmAdd").value.trim(); if (!t) return;
+        window.OH.rpc("memory.add", { text: t, subject: "user" }).then(function () { $("mmAdd").value = ""; toast("saved"); loadMemory(); });
+      };
+      $("mmCons").onclick = function () {
+        window.OH.rpc("memory.consolidate", {}).then(function (r) { toast("consolidated " + ((r && r.memoriesChecked) || 0) + " memories", "ok"); loadMemory(); });
+      };
       $("mSearch").onclick = function () {
-        var q = $("mQ").value;
+        var q = $("mmQ").value;
         window.OH.rpc("memory.search", { query: q, limit: 30 }).then(function (hits) {
           var h = "<div class='card'>";
           (hits || []).forEach(function (x) {
             var m = x.memory || x;
-            h += "<div class='mrow'><b>" + esc(m.subject || "") + "</b> <span class='dim'>" + Math.round((x.score || 0) * 100) + "%</span><br>" + esc(m.text || "") + "</div>";
+            h += "<div class='mrow'><b>" + esc(m.subject || "") + "</b> <span class='dim'>" + Math.round((x.score || 0) * 100) + "%</span><br>" + esc(m.text || "") + "<div style='margin-top:4px'><button class='ghostbtn' data-mdel='" + esc(m.id || "") + "'>forget</button></div></div>";
           });
           if (!(hits || []).length) h += "<div class='dim'>no hits</div>";
           h += "</div>";
           host.innerHTML = html + h;
+          wireRows();
         });
       };
     }).catch(function (e) { host.innerHTML = "<div class='card'>" + esc(String(e)) + "</div>"; });
   }
+
   function loadAsks() {
     var host = $("sec-tools");
     window.OH.rpc("tools.pending", {}).then(function (list) {
