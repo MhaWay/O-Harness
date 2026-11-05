@@ -54,6 +54,13 @@ export interface GatewayConfig {
 
 export const DEFAULT_PORT = 8710;
 
+/** Minimal mark: dark rounded square, O ring, vertical spine (the harness). */
+export const FAVICON_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+  + "<rect width='64' height='64' rx='14' fill='#0d1117'/>"
+  + "<circle cx='32' cy='32' r='17' fill='none' stroke='#5ba0ff' stroke-width='7'/>"
+  + "<rect x='29' y='20' width='6' height='24' rx='3' fill='#0d1117'/>"
+  + "</svg>";
+
 export function dataDirOf(dataDir?: string): string {
   return dataDir ?? join(homedir(), ".o-harness");
 }
@@ -725,6 +732,11 @@ export class Gateway {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
         try { res.end(readFileSync(new URL("mobile.html", UI_DIR), "utf8")); }
         catch { res.end(MOBILE_HTML); }
+        return;
+      }
+      if (url.pathname === "/favicon.ico" || url.pathname === "/favicon.svg") {
+        res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" });
+        res.end(FAVICON_SVG);
         return;
       }
       if (url.pathname === "/health") {
