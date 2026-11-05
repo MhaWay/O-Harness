@@ -20,10 +20,17 @@ docker run -d --name o-harness --restart=unless-stopped --net=host -v /:/host \
   --health-cmd 'wget -q -T3 -O /dev/null http://127.0.0.1:18711/health' --health-interval 30s --health-timeout 5s --health-retries 3 \
   alpine sh -c \
   'exec chroot /host env HOME=/root node --experimental-strip-types --no-warnings /opt/o-harness/packages/gateway/src/bin.ts --host 0.0.0.0 --port 18711' >/dev/null
-for i in $(seq 1 15); do
-  sleep 2
-  if docker run --rm --net=host alpine sh -c 'wget -q -T3 -O- http://127.0.0.1:18711/health' 2>/dev/null | grep -q '"ok":true'; then
-    echo DEPLOY-OK; exit 0
+# Poll up to 60s: container cold start can take ~20s+ (node strips TS at startup).
+# Use host curl when available (cheap); fall back to one docker run per poll.
+for i in $(seq 1 60); do
+  sleep 1
+  if command -v curl >/dev/null 2>&1; then
+    ok=$(curl -s -m 2 http://127.0.0.1:18711/health 2>/dev/null || true)
+  else
+    ok=$(docker run --rm --net=host alpine sh -c 'wget -q -T3 -O- http://127.0.0.1:18711/health' 2>/dev/null || true)
+  fi
+  if echo "$ok" | grep -q '"ok":true'; then
+    echo DEPLOY-OK "(healthy after ${i}s)"; exit 0
   fi
 done
 echo DEPLOY-FAIL; docker logs --tail 15 o-harness 2>&1 | tail -15; exit 1
