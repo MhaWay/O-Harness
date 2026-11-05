@@ -253,16 +253,22 @@ function showView(name) {
       else {
         if (h.length >= PAGE) chatEarliest = h[0].seq;
         for (var i = 0; i < h.length; i++) log.appendChild(bubbleFor(h[i]));
+        fillHist(h);
       }
       if (chatEarliest) addEarlierBtn();
       log.scrollTop = log.scrollHeight;
     } catch (e) { toast("history: " + e, "err") }
   }
   var sending = false;
+  var hist = [], histIdx = -1, histDraft = "";
+  function fillHist(h) { hist = []; histIdx = -1; for (var i = 0; i < h.length; i++) { if (h[i].role === "user" && h[i].text) hist.push(h[i].text) } if (hist.length > 200) hist = hist.slice(-200) }
   async function sendChat() {
     var input = $("#chatInput");
     var msg = input.value.trim();
     if (!msg || sending) return;
+    if (!hist.length || hist[hist.length - 1] !== msg) hist.push(msg);
+    if (hist.length > 200) hist = hist.slice(-200);
+    histIdx = -1; histDraft = "";
     sending = true; var sb = $("#sendBtn"); sb.classList.add("stop"); sb.innerHTML = "&#9632;"; sb.title = "stop generation"; sb.disabled = false;
     input.value = ""; input.style.height = "auto";
     $("#chatLog").appendChild(bubble("user", md(msg), { mline: "<span>you</span>" }));
@@ -1191,7 +1197,19 @@ function showView(name) {
       };
     }
     if (window.OH.onEvent) window.OH.onEvent("voice.settings", function () { loadVoiceCard(); });
-    $("#chatInput").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat() } });
+    $("#chatInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); return }
+      if (e.key === "ArrowUp" && this.selectionStart === 0 && this.selectionEnd === 0 && this.value.indexOf("\n") === -1) {
+        if (histIdx === -1) { if (!hist.length) return; histDraft = this.value; histIdx = hist.length - 1 }
+        else if (histIdx === 0) { e.preventDefault(); return }
+        else histIdx--;
+        this.value = hist[histIdx] || ""; e.preventDefault(); this.setSelectionRange(this.value.length, this.value.length); this.style.height = Math.min(this.scrollHeight, 200) + "px";
+      } else if (e.key === "ArrowDown" && histIdx >= 0) {
+        if (histIdx >= hist.length - 1) { histIdx = -1; this.value = histDraft }
+        else { histIdx++; this.value = hist[histIdx] || "" }
+        e.preventDefault(); this.style.height = Math.min(this.scrollHeight, 200) + "px";
+      }
+    });
     $("#chatInput").addEventListener("input", function () { this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 200) + "px" });
     $("#paletteBtn").onclick = palette;
     document.addEventListener("keydown", function (e) {
