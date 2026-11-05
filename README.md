@@ -166,7 +166,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 73. ✅ Mobile slash commands: the `/m` input understands `/help`, `/new`, `/rename <t>`, `/thinking none|low|medium|xhigh`, `/models`, `/memory <q>`, `/export`, `/pin`, `/archive`/`/unarchive` and `/stop` — each answered as a system bubble (or handled locally: `/new` creates and switches sessions, `/thinking` stores the effort for the next send), the same command surface as the desktop command palette.
 74. ✅ Mobile Pulse tab: `/m` got a live status view — service health rows (up/down, latency, fail count, age of last check) with a *check now* button, firing alerts with **ack**, and summary cards for minions/devices/schedule — the same picture the desktop Overview paints, on the phone.
 75. ✅ Mobile Logs tab: the `/m` *Logs* view tails live + persisted gateway logs (search box, warn/error level filter) and toggles the **audit** stream (logins, pairing, grants, scope denies, restores) with relative timestamps — same surface as the desktop Logs view.
-76. Next: npm publish (deferred by user)
+76. ✅ Audit coverage round: privileged actions — `agents.kill`, `tools.respond` (who approved/remembered), `grants.revoke`, `schedule.remove`, `self.update` — now land in the audit trail alongside logins/pairing; `tools.respond` records whether the responder was a device or the admin client. Fixed: the scheduler's 30s tick timer was not cleared on `stop()`, keeping the process/runner alive.
+77. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.

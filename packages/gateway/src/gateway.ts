@@ -356,7 +356,7 @@ export class Gateway {
       const s = this.sessions.get(m.sessionId);
       return { ...m, entries: s?.entries ?? [] };
     });
-    this.rpc.set(Methods.AgentsKill, (p) => ({ ok: this.agents.kill(String(p?.id)) }));
+    this.rpc.set(Methods.AgentsKill, (p) => { const ok = this.agents.kill(String(p?.id)); if (ok) this.audit.note("agents.kill", { actor: "client", id: String(p?.id) }); return { ok }; });
 
     // chat: conversational interface on top of sessions (history + memory context)
     this.rpc.set(Methods.ChatSend, async (p) => {
@@ -424,7 +424,7 @@ export class Gateway {
       cadence: p?.cadence as any,
     }));
     this.rpc.set(Methods.ScheduleList, () => this.scheduler.list());
-    this.rpc.set(Methods.ScheduleRemove, (p) => ({ ok: this.scheduler.remove(String(p?.id ?? "")) }));
+    this.rpc.set(Methods.ScheduleRemove, (p) => { const ok = this.scheduler.remove(String(p?.id ?? "")); if (ok) this.audit.note("schedule.remove", { actor: "client", id: String(p?.id ?? "") }); return { ok }; });
     this.rpc.set(Methods.ScheduleRunNow, (p) => { const j = this.scheduler.runNow(String(p?.id ?? "")); return j ? { ok: true, id: j.id } : { ok: false, error: "unknown job" }; });
     this.rpc.set(Methods.ScheduleSetDisabled, (p) => ({ ok: this.scheduler.setDisabled(String(p?.id ?? ""), Boolean(p?.disabled)) }));
 
@@ -592,10 +592,13 @@ export class Gateway {
     this.rpc.set(Methods.DeviceToolsList, () => this.tools.list());
     this.rpc.set(Methods.DeviceToolsCall, (p) => this.tools.call(String(p?.deviceId ?? ""), String(p?.tool ?? ""), p?.args, "client"));
     this.rpc.set(Methods.ToolsPending, () => this.tools.pending());
-    this.rpc.set(Methods.ToolsRespond, (p, ctx) =>
-      ({ ok: this.tools.respond(String(p?.id ?? ""), Boolean(p?.approved), Boolean(p?.remember), { admin: ctx.admin, deviceId: ctx.deviceId }) }));
+    this.rpc.set(Methods.ToolsRespond, (p, ctx) => {
+      const ok = this.tools.respond(String(p?.id ?? ""), Boolean(p?.approved), Boolean(p?.remember), { admin: ctx.admin, deviceId: ctx.deviceId });
+      this.audit.note("tools.respond", { actor: ctx.deviceId ? "device:" + ctx.deviceId : "client", id: String(p?.id ?? ""), approved: Boolean(p?.approved), remembered: Boolean(p?.remember) });
+      return { ok };
+    });
     this.rpc.set(Methods.GrantsList, (p) => this.tools.grantsFor(p?.deviceId ? String(p.deviceId) : undefined));
-    this.rpc.set(Methods.GrantsRevoke, (p) => ({ ok: this.tools.revoke(String(p?.deviceId ?? ""), String(p?.tool ?? "")) }));
+    this.rpc.set(Methods.GrantsRevoke, (p) => { const ok = this.tools.revoke(String(p?.deviceId ?? ""), String(p?.tool ?? "")); if (ok) this.audit.note("grants.revoke", { actor: "client", deviceId: String(p?.deviceId ?? ""), tool: String(p?.tool ?? "") }); return { ok }; });
     this.rpc.set(Methods.ModelsFetch, (p) => fetchProviderModels(String(p?.baseUrl ?? ""), typeof p?.apiKey === "string" && p.apiKey !== "***set***" ? p.apiKey : undefined));
     this.rpc.set(Methods.ModelsTest, async (p) => {
       const ref = this.settings.resolveRef(String(p?.providerId ?? ""), String(p?.modelId ?? ""));
@@ -608,6 +611,7 @@ export class Gateway {
       return { text: String(out?.choices?.[0]?.message?.content ?? "").trim(), usage: out?.usage };
     });
     this.rpc.set(Methods.SelfUpdate, async () => {
+      this.audit.note("self.update", { actor: "client" });
       const s = this.settings.get();
       if (!s.allowSelfUpdate) throw new Error("self-update disabled (settings.allowSelfUpdate=false)");
       const dir = s.repoDir ?? process.cwd();
@@ -919,6 +923,7 @@ export class Gateway {
 
   async stop() {
     if (this.#monitorTimer) { clearInterval(this.#monitorTimer); this.#monitorTimer = null; }
+    if (this.scheduler) this.scheduler.stop();
     if (this.instances) { this.instances.stop(); this.instances = null; }
     await this.plugins.teardownAll();
     for (const d of this.registry.all()) { if (d.conn) { try { (d.conn as WebSocket).close(); } catch { /* noop */ } } }
