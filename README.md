@@ -133,7 +133,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 40. ✅ Authz hardening + audit trail: scope enforcement is fail-closed (unmapped methods deny, `admin > write > read` hierarchy), every deny is audited, and authz-relevant events (login ok/deny/limit, pair redeem/deny, device revoke, backup restore, scope deny) land in an append-only `audit.jsonl` with rotation. `o-h logs audit [--q …]` or `logs.audit` RPC
 41. ✅ Live status widgets: the topbar model pill shows the active model + thinking level (updates in place via `settings.changed`), and the sidebar foot shows protocol, session count and gateway pid — both were dead placeholders before
 42. ✅ Session housekeeping: the Sessions view can now rename (✎) and delete (✕) conversations from the GUI, and `o-h session rename --id … <title>` / `o-h session delete --id …` work from the CLI (subcommand first, then `--id`). Deletes are refused for `main` (protected), the GUI asks for confirmation with the entry count, and removals are audited as `sessions.delete`.
-43. Next: npm publish (deferred by user)
+43. ✅ Chat markdown upgrade: triple-backtick fences render as proper code blocks with a copy button (works on plain http via an execCommand fallback), and pipe-style tables render as real `<table>`s with header row — plus a fix so a fenced block can no longer get swallowed into a preceding paragraph.
+44. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
