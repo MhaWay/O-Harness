@@ -366,13 +366,21 @@
     $("mNewBtn").onclick = newChat;
     $("mSessions").onchange = function () { sessId = this.value; localStorage.setItem("oh.msess", sessId); loadChat(); loadSessions(); };
     function curSession() { var A = window.__ohSessions || []; for (var i = 0; i < A.length; i++) { if (A[i].id === sessId) return A[i] } return null; }
+    async function liveSession() {
+      try {
+        var A = await window.OH.rpc("sessions.list", {});
+        var hit = (A || []).filter(function (s) { return s.id === sessId })[0];
+        if (hit) { window.__ohSessions = A.filter(function (s) { return !s.archived }); }
+        return hit || curSession();
+      } catch (e) { return curSession(); }
+    }
     $("mPinBtn").onclick = async function () {
-      var s = curSession();
+      var s = await liveSession();
       if (!s) { toast("open a chat first"); return; }
       try { await window.OH.rpc("sessions.pin", { id: s.id, pinned: !s.pinned }); toast(s.pinned ? "unpinned" : "pinned", "ok"); loadSessions(); } catch (e) { toast(String(e)); }
     };
     $("mRenBtn").onclick = async function () {
-      var s = curSession();
+      var s = await liveSession();
       if (!s) { toast("open a chat first"); return; }
       var t = prompt("session title", s.title || "");
       if (t && t.trim()) { try { await window.OH.rpc("sessions.rename", { id: s.id, title: t.trim() }); toast("renamed", "ok"); loadSessions(); } catch (e) { toast(String(e)); } }
