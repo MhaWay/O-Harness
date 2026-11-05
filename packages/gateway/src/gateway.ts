@@ -3,7 +3,7 @@ import { createServer as createSecureServer } from "node:https";
 import { WebSocketServer, WebSocket } from "ws";
 import { mkdirSync, readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
-import { homedir } from "node:os";
+import { homedir, hostname, platform, arch } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -178,6 +178,8 @@ export class Gateway {
       listDeviceTools: () => this.tools.list(),
       callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester),
       broadcast: (t, d) => this.#broadcastEvent(t, d),
+      devices: () => this.registry.all().map((d) => ({ id: d.id, name: d.name, kind: String(d.kind), status: d.status, capabilities: d.capabilities, meta: d.meta })),
+      host: () => ({ platform: platform(), arch: arch(), hostname: hostname() }),
     });
     this.scheduler = new SchedulerRuntime({
       storeDir: join(dataDirOf(dataDir), 'schedules'),
@@ -365,7 +367,7 @@ export class Gateway {
     this.rpc.set(Methods.AgentsKill, (p) => { const ok = this.agents.kill(String(p?.id)); if (ok) this.audit.note("agents.kill", { actor: "client", id: String(p?.id) }); return { ok }; });
 
     // chat: conversational interface on top of sessions (history + memory context)
-    this.rpc.set(Methods.ChatSend, async (p) => {
+    this.rpc.set(Methods.ChatSend, async (p, ctx) => {
       const sessionId = String(p?.sessionId ?? "main");
       const message = typeof p?.message === "string" ? (p.message as string) : String(p?.message ?? "");
       if (!message.trim()) throw new Error("chat.send: message required");
@@ -378,6 +380,7 @@ export class Gateway {
           effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
           model: p?.model ? String(p.model) : undefined,
           signal: ac.signal,
+          sourceDevice: (p && typeof p.deviceId === "string" ? p.deviceId : (ctx && typeof ctx.deviceId === "string" ? ctx.deviceId : undefined)),
         });
       } finally {
         if (this.#chatAborts.get(sessionId) === ac) this.#chatAborts.delete(sessionId);
@@ -390,7 +393,7 @@ export class Gateway {
       ac.abort();
       return { ok: true };
     });
-    this.rpc.set(Methods.ChatRegenerate, async (p) => {
+    this.rpc.set(Methods.ChatRegenerate, async (p, ctx) => {
       const sessionId = String(p?.sessionId ?? "main");
       this.#chatAborts.get(sessionId)?.abort();
       const ac = new AbortController();
@@ -400,6 +403,7 @@ export class Gateway {
           effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
           model: p?.model ? String(p.model) : undefined,
           signal: ac.signal,
+          sourceDevice: (p && typeof p.deviceId === "string" ? p.deviceId : (ctx && typeof ctx.deviceId === "string" ? ctx.deviceId : undefined)),
         });
         if (!r) return { ok: false, reason: "nothing to regenerate" };
         return { ok: true, text: r.text, dropped: r.dropped };

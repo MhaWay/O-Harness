@@ -42,7 +42,16 @@
     "notes.create": function (a) { var n = localTools["notes.list"](); n.push({ id: String(Date.now()), text: String((a && a.text) || ""), when: String((a && a.when) || ""), createdAt: new Date().toISOString() }); localStorage.setItem("oh.notes", JSON.stringify(n)); return { ok: true, count: n.length }; },
     "notes.search": function (a) { var q = String((a && a.query) || "").toLowerCase(); return localTools["notes.list"]().filter(function (x) { return String(x.text || "").toLowerCase().indexOf(q) >= 0; }); },
     "calendar.list": function () { try { return JSON.parse(localStorage.getItem("oh.cal") || "[]"); } catch (e) { return []; } },
-    "calendar.create": function (a) { var c = localTools["calendar.list"](); c.push({ title: String((a && a.title) || ""), when: String((a && a.when) || "") }); localStorage.setItem("oh.cal", JSON.stringify(c)); return { ok: true }; }
+    "calendar.create": function (a) { var c = localTools["calendar.list"](); c.push({ title: String((a && a.title) || ""), when: String((a && a.when) || "") }); localStorage.setItem("oh.cal", JSON.stringify(c)); return { ok: true }; },
+    "notify": function (a) {
+      var t = String((a && a.title) || "O-Harness");
+      var b = String((a && a.body) || "");
+      try {
+        if (typeof Notification !== "undefined" && Notification.permission !== "granted") { try { Notification.requestPermission(); } catch (e) { } }
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") { new Notification(t, { body: b }); return { ok: true, kind: "native" }; }
+      } catch (e) { }
+      toast(t + " — " + b, "warn"); return { ok: true, kind: "in-app", note: "shown in app (no native permission)" };
+    }
   };
   var offered = [
     { name: "device.info", description: "Phone info: browser, screen, online, language, time", parameters: { type: "object", properties: {} } },
@@ -50,7 +59,8 @@
     { name: "notes.create", description: "Add a note. args: { text: string, when?: string }", parameters: { type: "object", properties: { text: { type: "string" }, when: { type: "string" } }, required: ["text"] } },
     { name: "notes.search", description: "Search notes by substring. args: { query: string }", parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
     { name: "calendar.list", description: "List calendar events saved on this phone", parameters: { type: "object", properties: {} } },
-    { name: "calendar.create", description: "Add a calendar event. args: { title: string, when: string }", parameters: { type: "object", properties: { title: { type: "string" }, when: { type: "string" } }, required: ["title"] } }
+    { name: "calendar.create", description: "Add a calendar event. args: { title: string, when: string }", parameters: { type: "object", properties: { title: { type: "string" }, when: { type: "string" } }, required: ["title"] } },
+    { name: "notify", description: "Show a notification on this phone (native if allowed, else in-app toast). args: { title?, body? }", parameters: { type: "object", properties: { title: { type: "string" }, body: { type: "string" } } } }
   ];
   function offerTools() {
     var secret = localStorage.getItem(SECRET_KEY);

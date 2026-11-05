@@ -14,6 +14,9 @@ export interface ChatOptions {
   callTool?: (deviceId: string, tool: string, args: unknown, requester: string) => Promise<unknown>;
   broadcast?: (topic: string, data: unknown) => void;
   maxTurns?: number;
+  /** Connected devices (live): environment map + per-device tool defs. */
+  devices?: () => { id: string; name: string; kind: string; status?: string; capabilities?: string[]; meta?: Record<string, unknown> }[];
+  host?: () => { platform: string; arch: string; hostname: string };
 }
 
 const CHAT_SYSTEM = "You are O-Harness, a personal assistant running on the user's own hardware (gateway + devices + minions). " +
@@ -52,6 +55,21 @@ const LOCAL_TOOLS = [
     description: "Remember a durable fact about the user or project. Use only for clear, stable facts (preferences, decisions, configs).",
     parameters: { type: "object", properties: { text: { type: "string" }, subject: { type: "string" } }, required: ["text"] },
   },
+  {
+    name: "edit_file",
+    description: "Replace an exact string in a file on the gateway host (read+write atomically). Fails if old is missing or appears more than once unless all=true. Args: {path, old, new, all?}",
+    parameters: { type: "object", properties: { path: { type: "string" }, old: { type: "string" }, new: { type: "string" }, all: { type: "boolean" } }, required: ["path", "old", "new"] },
+  },
+  {
+    name: "process",
+    description: "Background command lifecycle on the gateway host. op=start {command, cwd?} returns {pid, log}; op=status {pid} returns {running, code, tail}; op=kill {pid}; op=list {} lists pids. Prefer this over exec for anything longer than a few seconds.",
+    parameters: { type: "object", properties: { op: { type: "string", enum: ["start", "status", "kill", "list"] }, command: { type: "string" }, cwd: { type: "string" }, pid: { type: "number" } }, required: ["op"] },
+  },
+  {
+    name: "memory_update",
+    description: "Correct or replace durable memory: adds a new memory and supersedes the one with the given id. Find ids with memory_search first. Args: {text, subject?, id?}",
+    parameters: { type: "object", properties: { text: { type: "string" }, subject: { type: "string" }, id: { type: "string" } }, required: ["text"] },
+  },
 ];
 
 export interface ChatToolStep { tool: string; args: unknown; result: string }
@@ -61,7 +79,7 @@ export class ChatRuntime {
   constructor(opts: ChatOptions) { this.#opts = opts; }
 
   /** Send a user message into a session and get the assistant reply (runs a bounded tool loop; appends both roles to the session log). */
-  async chat(sessionId: string, message: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal } = {}): Promise<{ text: string; entries: number; toolSteps?: ChatToolStep[] }> {
+  async chat(sessionId: string, message: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal; sourceDevice?: string } = {}): Promise<{ text: string; entries: number; toolSteps?: ChatToolStep[] }> {
     const s = this.#opts.sessions.get(sessionId);
     if (!s) throw new Error("unknown session: " + sessionId);
     const resolved = this.#opts.settings.resolveDefault();
@@ -116,14 +134,38 @@ export class ChatRuntime {
     const contextBlock = (summaryText ? "SUMMARY OF EARLIER TURNS:\n" + summaryText + "\n\n" : "") +
       (memLine ? "CONTEXT (durable user memory):\n" + memLine + "\n\n" : "") +
       "Current time: " + new Date().toISOString();
+    // environment: where the assistant runs, which devices exist, where the user is writing from
+    const envLines: string[] = [];
+    try {
+      const h = this.#opts.host?.();
+      if (h) envLines.push("Gateway host: " + h.hostname + " (" + h.platform + "/" + h.arch + "). Tools without a device prefix (exec, read_file, write_file, edit_file, process) run there on the gateway.");
+    } catch { /* host unknown */ }
+    try {
+      const devs = (this.#opts.devices?.() ?? []).filter((d) => d.status !== "offline");
+      if (devs.length) {
+        envLines.push("Connected devices:");
+        for (const d of devs) {
+          const m = (d.meta ?? {}) as Record<string, unknown>;
+          const bits = [d.kind + (m.platform ? "/" + String(m.platform) : ""), m.hostname ? "host=" + String(m.hostname) : "", (d.capabilities ?? []).length ? "caps=" + (d.capabilities ?? []).join(",") : ""].filter(Boolean).join(" ");
+          envLines.push("- " + d.id + " (name: " + d.name + ") " + bits);
+        }
+        envLines.push("To act on another device, call <deviceId>:exec / <deviceId>:read_file / <deviceId>:write_file / <deviceId>:<offered-tool>. Device calls reach the device over its connection (LAN direct or gateway channel).");
+      }
+    } catch { /* devices optional */ }
+    const src = opts.sourceDevice ? (this.#opts.devices?.() ?? []).find((d) => d.id === opts.sourceDevice) : undefined;
+    if (src) {
+      const sm = (src.meta ?? {}) as Record<string, unknown>;
+      envLines.push("The user is writing THIS message from device id=" + src.id + " (name: " + src.name + ", kind: " + src.kind + (sm.platform ? ", platform " + String(sm.platform) : "") + (sm.hostname ? ", host " + String(sm.hostname) : "") + "). For personal questions (calendar, notes, what they are doing on that device) prefer that device's tools, and use <deviceId>:notify to get their attention there.");
+    }
+    const environment = envLines.length ? "ENVIRONMENT (where you and the user are):" + "\n" + envLines.join("\n") + "\n\n" : "";
     const messages: any[] = [
-      { role: "system", content: CHAT_SYSTEM + "\n\n" + contextBlock },
+      { role: "system", content: CHAT_SYSTEM + "\n\n" + environment + contextBlock },
       ...history,
     ];
 
     // tool defs: local + device-offered
     const toolDefs = LOCAL_TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
-    const deviceToolNames = new Map<string, { deviceId: string; tool: string }>();
+    const deviceToolNames = new Map<string, { deviceId: string; tool: string; method?: string }>();
     const offered = this.#opts.listDeviceTools?.() ?? {};
     for (const [deviceId, tools] of Object.entries(offered)) {
       for (const t of tools) {
@@ -133,6 +175,16 @@ export class ChatRuntime {
       }
     }
 
+    // per-device exec/fs tool defs: every connected node exposing exec can be driven remotely
+    for (const d of (this.#opts.devices?.() ?? []).filter((x) => x.status !== "offline" && x.id !== "local" && (x.capabilities ?? []).includes("exec"))) {
+      const mk = (suffix: string, desc: string, method: string, props: Record<string, unknown>, req: string[]) => {
+        deviceToolNames.set(d.id + ":" + suffix, { deviceId: d.id, tool: suffix, method });
+        toolDefs.push({ type: "function", function: { name: d.id + ":" + suffix, description: desc + " Runs remotely on device " + d.id + " (" + d.name + ", " + d.kind + ").", parameters: { type: "object", properties: props, required: req } } });
+      };
+      mk("exec", "Run a shell command remotely.", "exec", { command: { type: "string" }, cwd: { type: "string" } }, ["command"]);
+      mk("read_file", "Read a UTF-8 file remotely.", "fs.read", { path: { type: "string" } }, ["path"]);
+      mk("write_file", "Write a UTF-8 file remotely.", "fs.write", { path: { type: "string" }, content: { type: "string" } }, ["path", "content"]);
+    }
     // Unlimited by default: the model decides when it is finished.
     // Guards: 30-min wall-clock deadline and a death-loop detector (same call 4x).
     // dsh-style per-turn system reminder keeps it pushing until done or clearly blocked.
@@ -184,7 +236,7 @@ export class ChatRuntime {
             let content: unknown;
             const devRef = deviceToolNames.get(name);
             if (devRef) {
-              try { content = await this.#opts.callTool!(devRef.deviceId, devRef.tool, args, "chat"); }
+              try { content = devRef.method ? await this.#opts.callDevice(devRef.deviceId, devRef.method, args) : await this.#opts.callTool!(devRef.deviceId, devRef.tool, args, "chat"); }
               catch (err) { content = "tool error: " + String(err); }
             } else if (name === "exec") {
               try { content = await this.#opts.callDevice("local", "exec", { command: args.command, cwd: args.cwd }); } catch (err) { content = "tool error: " + String(err); }
@@ -196,6 +248,20 @@ export class ChatRuntime {
               try { content = this.#opts.memory.search({ query: args.query, subject: args.subject, limit: args.limit ?? 5 }); } catch (err) { content = "tool error: " + String(err); }
             } else if (name === "memory_add") {
               try { content = this.#opts.memory.add({ text: String(args.text), subject: args.subject ?? "user" }); } catch (err) { content = "tool error: " + String(err); }
+            } else if (name === "edit_file") {
+              try {
+                const r0: any = await this.#opts.callDevice(args.deviceId ?? "local", "fs.read", { path: args.path });
+                const cur = String(r0?.content ?? "");
+                const hits = cur.split(String(args.old)).length - 1;
+                if (hits === 0) throw new Error("edit_file: old string not found in " + String(args.path));
+                if (hits > 1 && args.all !== true) throw new Error("edit_file: old appears " + hits + " times; pass all=true to replace all");
+                await this.#opts.callDevice(args.deviceId ?? "local", "fs.write", { path: args.path, content: cur.split(String(args.old)).join(String(args.new)) });
+                content = { ok: true, replaced: hits, path: String(args.path) };
+              } catch (err) { content = "tool error: " + String(err); }
+            } else if (name === "process") {
+              try { content = await this.#runProcess(args); } catch (err) { content = "tool error: " + String(err); }
+            } else if (name === "memory_update") {
+              try { content = this.#opts.memory.add({ text: String(args.text), subject: args.subject ?? "user" }, { supersedeIds: args.id ? [String(args.id)] : [] }); } catch (err) { content = "tool error: " + String(err); }
             } else {
               content = "unknown tool: " + name;
             }
@@ -233,12 +299,49 @@ export class ChatRuntime {
     return { text, entries: s.entries.length, toolSteps: steps.length ? steps : undefined };
   }
 
+  #procs = new Map<number, { child: import("node:child_process").ChildProcess; log: string }>();
+
+  async #runProcess(args: any): Promise<unknown> {
+    const op = String(args?.op ?? "");
+    if (op === "start") {
+      if (typeof args.command !== "string") throw new Error("process.start: command required");
+      const { openSync } = await import("node:fs");
+      const { spawn } = await import("node:child_process");
+      const { tmpdir } = await import("node:os");
+      const log = tmpdir() + "/oh-proc.log";
+      const fd = openSync(log, "a");
+      const child = spawn("/bin/sh", ["-c", String(args.command)], { cwd: args.cwd ? String(args.cwd) : undefined, detached: true, stdio: ["ignore", fd, fd] });
+      const pid = child.pid ?? -1;
+      child.on("error", () => { /* surfaced via status */ });
+      this.#procs.set(pid, { child, log: String(log) });
+      return { pid, log: String(log), started: true };
+    }
+    if (op === "status") {
+      const p = this.#procs.get(Number(args.pid));
+      if (!p) return { running: false, unknown: true, reason: "unknown pid (list known, or start)" };
+      const { readFile } = await import("node:fs/promises");
+      let tail = "";
+      try { tail = (await readFile(p.log, "utf-8")).slice(-2000); } catch { tail = "(no output yet)"; }
+      return { running: p.child.exitCode === null, code: p.child.exitCode ?? undefined, tail };
+    }
+    if (op === "kill") {
+      const p = this.#procs.get(Number(args.pid));
+      if (!p) return { ok: false, reason: "unknown pid" };
+      try { p.child.kill("SIGTERM"); } catch { /* already dead */ }
+      return { ok: true };
+    }
+    if (op === "list") {
+      return [...this.#procs.entries()].map(([pid, p]) => ({ pid, running: p.child.exitCode === null }));
+    }
+    throw new Error("process: unknown op " + op);
+  }
+
   /**
    * Regenerate the last answer: pop back to just before the last user message
    * (it is re-sent through chat(), so the user turn is re-appended once), then run again.
    * Returns null when the session has no user message. `dropped` = entries removed.
    */
-  async regenerate(sessionId: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal } = {}): Promise<{ text: string; dropped: number } | null> {
+  async regenerate(sessionId: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal; sourceDevice?: string } = {}): Promise<{ text: string; dropped: number } | null> {
     const s = this.#opts.sessions.get(sessionId);
     if (!s) throw new Error("unknown session: " + sessionId);
     let idx = -1;
