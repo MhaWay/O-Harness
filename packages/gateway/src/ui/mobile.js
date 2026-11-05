@@ -391,6 +391,7 @@
       html += "<div id='mJobForm' style='display:none;margin:0 0 10px'>"
         + "<input id='mJobLabel' placeholder='label' style='width:100%'>"
         + "<div style='margin-top:6px'><select id='mJobKind' style='width:100%'><option value='chat'>chat message</option><option value='minion'>minion task</option></select></div>"
+        + "<div id='mJobSessRow' style='margin-top:6px'><select id='mJobSess' style='width:100%'></select></div>"
         + "<textarea id='mJobMsg' placeholder='message…' style='width:100%;margin-top:6px'></textarea>"
         + "<div style='margin-top:6px;display:flex;gap:6px'><select id='mJobCad' style='flex:1'><option value='every'>every…</option><option value='daily'>daily</option><option value='once'>once at</option></select>"
         + "<input id='mJobVal' placeholder='minutes' style='width:90px'></div>"
@@ -414,7 +415,19 @@
         f.style.display = f.style.display === "none" ? "block" : "none";
       };
       var kindSel = $("mJobKind");
-      if (kindSel) kindSel.onchange = function () { $("mJobMsg").placeholder = kindSel.value === "minion" ? "task for a minion…" : "message…"; };
+      var sessRow = $("mJobSessRow");
+      if (kindSel) kindSel.onchange = function () {
+        $("mJobMsg").placeholder = kindSel.value === "minion" ? "task for a minion…" : "message…";
+        if (sessRow) sessRow.style.display = kindSel.value === "chat" ? "" : "none";
+      };
+      window.OH.rpc("sessions.list", {}).then(function (ss) {
+        var sel = $("mJobSess");
+        if (!sel) return;
+        var opts = (ss || []).filter(function (s) { return !s.archived; }).slice(0, 40).map(function (s) {
+          return "<option value='" + esc(s.id) + "'" + (s.id === "main" ? " selected" : "") + ">" + esc(s.title) + "</option>";
+        }).join("");
+        sel.innerHTML = opts || "<option value='main'>main</option>";
+      }).catch(function () {});
       var cadSel = $("mJobCad");
       if (cadSel) cadSel.onchange = function () {
         var v = $("mJobVal");
@@ -442,7 +455,8 @@
           }
         } catch (err) { toast("cadence: " + String(err.message || err), "err"); return; }
         var jkind = $("mJobKind") ? $("mJobKind").value : "chat";
-        window.OH.rpc("schedule.create", { label: label, message: jkind === "chat" ? message : undefined, task: jkind === "minion" ? message : undefined, cadence: cadence }).then(function (r) {
+        var sess = $("mJobSess") ? $("mJobSess").value : "main";
+        window.OH.rpc("schedule.create", { label: label, message: jkind === "chat" ? message : undefined, task: jkind === "minion" ? message : undefined, sessionId: jkind === "chat" ? sess : undefined, cadence: cadence }).then(function (r) {
           toast(r && r.id ? "job created" : "error", r && r.id ? "ok" : "err");
           loadSched();
         }).catch(function (er) { toast(String(er), "err"); });
