@@ -52,6 +52,9 @@ main{display:flex;flex-direction:column;min-width:0}
 .md pre{background:#0a0d12;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;margin:8px 0;font:12.5px/1.5 ui-monospace,monospace}
 .md code{font:12.5px ui-monospace,monospace;background:#0a0d12;border:1px solid var(--line);border-radius:4px;padding:1px 4px}
 .md pre code{border:0;padding:0;background:none}
+.md pre.codeblock{position:relative}
+.cpbtn{position:sticky;float:right;top:0;margin:-1px -1px 0 0;border:1px solid var(--line);background:var(--panel2);color:var(--dim);border-radius:6px;font-size:10.5px;padding:2px 7px;cursor:pointer;z-index:1}
+.cpbtn:hover{color:var(--txt);border-color:var(--acc)}
 .md a{color:var(--acc)}
 .md h1,.md h2,.md h3{margin:10px 0 6px;font-size:15px}
 .alertrow { padding: 8px 10px; margin: 6px 0; background: rgba(231,76,60,.12); border-left: 3px solid #e74c3c; border-radius: 6px; }

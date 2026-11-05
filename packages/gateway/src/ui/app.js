@@ -15,6 +15,21 @@
     setTimeout(function () { if (d.parentNode) d.remove() }, 4000);
   };
   window.toast = toast;
+  function copyText(t) {
+    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(t); return true }
+    var ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy") } catch (err) { ok = false }
+    ta.remove(); return ok;
+  }
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest(".cpbtn") : null;
+    if (!b) return;
+    var pre = b.closest("pre"); if (!pre) return;
+    var code = pre.querySelector("code"); if (!code) return;
+    toast(copyText(code.textContent) ? "code copied" : "copy failed", "");
+  });
   function inline(t) {
     t = esc(t);
     while (t.indexOf("**") >= 0) {
@@ -43,11 +58,12 @@
     var out = []; var i = 0;
     while (i < lines.length) {
       var line = lines[i];
-      if (line.slice(0, 3) === "~~~") {
+      var fence = line.slice(0, 3);
+      if (fence === "~~~" || fence === BT + BT + BT) {
         i++; var code = [];
-        while (i < lines.length && lines[i].slice(0, 3) !== "~~~") { code.push(lines[i]); i++ }
+        while (i < lines.length && lines[i].slice(0, 3) !== fence) { code.push(lines[i]); i++ }
         i++;
-        out.push("<pre><code>" + esc(code.join(NL)) + "</code></pre>");
+        out.push("<pre class='codeblock'><button class='cpbtn' title='copy code'>copy</button><code>" + esc(code.join(NL)) + "</code></pre>");
         continue;
       }
       var h = 0; while (h < line.length && line[h] === "#") h++;
