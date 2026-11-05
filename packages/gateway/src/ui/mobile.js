@@ -20,7 +20,14 @@
   window.OH.onEvent = function (topic, data) {
     if (topic === "agents.changed") { if (tabOn("minions")) loadMinions(); }
     else if (topic === "tools.ask") { showAsk(data); }
-    else if (topic === "chat.stream") { if (data && data.tok && streamingMsg) { streamingMsg.buf += data.tok; streamingMsg.node.innerHTML = esc(streamingMsg.buf); } }
+    else if (topic === "chat.stream") {
+      if (!data || data.sessionId !== sessId) return;
+      var n = streamingMsg && streamingMsg.node && streamingMsg.node.isConnected ? streamingMsg.node : null;
+      if (!n && data.tok) { var bs = document.querySelectorAll("#chatLog .bubble.assistant"); n = bs[bs.length - 1] || null; }
+      if (data.reasoning) { var tn = ensureThink({ node: n }); if (tn) { var pb = tn.querySelector("pre.tb"); if (pb && !pb.textContent) pb.textContent = "…"; } }
+      else if (data.tok && n) { var m2 = n.querySelector(".md"); if (m2) { if (m2.textContent === "…" || m2.textContent === "") m2.textContent = data.tok; else m2.textContent += data.tok; } else n.appendChild(Object.assign(document.createElement("div"), { className: "md", textContent: data.tok })); }
+    }
+    else if (topic === "chat.tool") { if (data && data.sessionId === sessId) { var tn2 = streamingMsg && streamingMsg.node && streamingMsg.node.isConnected ? streamingMsg.node : (document.querySelectorAll("#chatLog .bubble.assistant")[document.querySelectorAll("#chatLog .bubble.assistant").length - 1] || null); if (tn2) toolEvent({ node: tn2 }, data); } }
     else if (topic === "chat.message") { streamingMsg = null; }
   };
   window.OH.onOpen = function () { setSt("ok", "online"); offerTools(); };
@@ -101,7 +108,9 @@
   }
   function ensureThink(m) {
     if (m.think && m.think.isConnected) return m.think;
-    if (!m.node.isConnected) return null;
+    if (!m.node || !m.node.isConnected) return null;
+    var ex = m.node.querySelector("details.think");
+    if (ex) { m.think = ex; return ex; }
     var det = document.createElement("details");
     det.className = "think";
     det.innerHTML = "<summary>thinking…</summary><pre class=\"tb\"></pre>";
@@ -280,6 +289,13 @@
             bt.style.cssText = "margin-left:6px;font-size:11px;padding:1px 7px";
             bt.onclick = function () { regenChat(); };
             mt.appendChild(bt);
+          }
+          if (e.reasoning) { ensureThink({ node: b }).querySelector("pre.tb").textContent = e.reasoning; }
+          if (e.steps && e.steps.length) {
+            var det = document.createElement("details"); det.className = "steps";
+            det.innerHTML = "<summary>⚙ Ran <span class=\"n\">" + e.steps.length + "</span> step</summary><div class=\"stepsbody\"></div>";
+            e.steps.forEach(function (st) { var ln = document.createElement("div"); ln.className = "stepline"; ln.textContent = stepLabel(st); ln.title = JSON.stringify(st.args || {}); det.querySelector(".stepsbody").appendChild(ln) });
+            var mdr = b.querySelector(".md"); if (b.contains(mdr)) b.insertBefore(det, mdr && mdr.parentNode === b ? mdr : b.firstChild);
           }
         }
       });
