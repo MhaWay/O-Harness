@@ -95,15 +95,26 @@
   async function loadLogs() {
   var host = $("#v-logs");
   if (S.logsQ === undefined) S.logsQ = "";
+  if (S.logsSrc === undefined) S.logsSrc = "log";
   host.innerHTML = "<h2 class='sec'>Logs</h2>" +
     "<div class='row'><input id='logsQ' placeholder='search... (q)' style='flex:1' value='" + esc(S.logsQ) + "'>" +
     "<select id='logsLevel'><option value=''>all levels</option><option value='debug'>debug</option><option value='info'>info</option><option value='warn'>warn</option><option value='error'>error</option></select>" +
-    "<button class='ghost' id='logsGo'>Apply</button><button class='ghost' id='logsResolve'>Ask model to analyze</button><span id='logsOut' class='dim'></span></div>" +
+    "<button class='ghost' id='logsGo'>Apply</button><button class='ghost' id='logsAuditBtn'>" + (S.logsSrc === "audit" ? "Show logs" : "Show audit") + "</button><button class='ghost' id='logsResolve'>Ask model to analyze</button><span id='logsOut' class='dim'></span></div>" +
     "<div id='logsStats' class='dim' style='margin:6px 0'></div>" +
     "<pre id='logsList' class='loglist'></pre>";
   var sel = $("#logsLevel"); if (S.logsLevel) sel.value = S.logsLevel;
   var draw = async function () {
     try {
+      if (S.logsSrc === "audit") {
+        var a = await OH.rpc("logs.audit", { limit: 300, ...(S.logsQ ? { q: S.logsQ } : {}) });
+        var evs = a.events.slice().reverse();
+        $("#logsList").innerHTML = evs.map(function (ev) {
+          var who = ev.actor || (ev.deviceId ? "device " + ev.deviceId : "");
+          return esc(new Date(ev.at).toISOString().slice(0, 19).replace("T", " ")) + " " + String(ev.event).toUpperCase() + (who ? " " + esc(String(who)) : "") + (ev.ip ? " ip=" + esc(String(ev.ip)) : "") + (ev.meta ? " " + esc(JSON.stringify(ev.meta)) : "");
+        }).join("\n") || "(empty)";
+        $("#logsStats").textContent = String(a.events.length) + " audited events (login, pairing, grants, scopes, restores)";
+        return;
+      }
       var r = await OH.rpc("logs.tail", { limit: 200, ...(S.logsQ ? { q: S.logsQ } : {}), ...(S.logsLevel ? { level: S.logsLevel } : {}) });
       $("#logsList").innerHTML = r.entries.map(function (e) { return esc(new Date(e.ts).toISOString().slice(0, 19).replace("T", " ")) + " " + e.level.toUpperCase() + " [" + e.module + "] " + e.msg + (e.meta ? " " + JSON.stringify(e.meta) : "") }).join("\n") || "(empty)";
       var st = await OH.rpc("logs.stats", undefined);
@@ -111,6 +122,7 @@
     } catch (e) { $("#logsList").textContent = "error: " + e.message }
   };
   $("#logsGo").onclick = function () { S.logsQ = $("#logsQ").value; S.logsLevel = $("#logsLevel").value; draw() };
+  $("#logsAuditBtn").onclick = function () { S.logsSrc = (S.logsSrc === "audit") ? "log" : "audit"; S.logsQ = $("#logsQ").value; loadLogs(); };
   $("#logsQ").onkeydown = function (ev) { if (ev.key === "Enter") { $("#logsGo").click() } };
   $("#logsResolve").onclick = async function () {
     $("#logsOut").textContent = "analyzing with the model (up to ~1 min)...";
