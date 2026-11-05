@@ -43,6 +43,28 @@ describe("http surface", () => {
       }
     });
   });
+  it("pwa assets: manifest json, service worker, icons", async () => {
+    await withGateway(async (base) => {
+      const m = await fetch(base + "/manifest.webmanifest");
+      assert.equal(m.status, 200);
+      assert.match(m.headers.get("content-type") ?? "", /manifest\+json/);
+      const mj: any = await m.json();
+      assert.equal(mj.name, "O-Harness");
+      assert.equal(mj.start_url, "/m");
+      assert.equal(mj.display, "standalone");
+      assert.ok(Array.isArray(mj.icons) && mj.icons.length >= 1);
+      const sw = await fetch(base + "/sw.js");
+      assert.equal(sw.status, 200);
+      assert.match(sw.headers.get("content-type") ?? "", /javascript/);
+      assert.match(await sw.text(), /addEventListener\(.(install)./);
+      for (const p of ["/icon.svg", "/maskable-icon.svg"]) {
+        const r = await fetch(base + p);
+        assert.equal(r.status, 200, p);
+        assert.match(r.headers.get("content-type") ?? "", /svg/);
+      }
+    });
+  });
+
   it("unknown paths 404", async () => {
     await withGateway(async (base) => {
       const r = await fetch(base + "/definitely-not-a-route");

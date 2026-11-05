@@ -673,6 +673,21 @@ export class Gateway {
         res.end(readFileSync(new URL("index.html", UI_DIR), "utf8"));
         return;
       }
+      if (url.pathname === "/manifest.webmanifest") {
+        res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "no-cache" });
+        res.end(readFileSync(new URL("manifest.webmanifest", UI_DIR), "utf8"));
+        return;
+      }
+      if (url.pathname === "/sw.js") {
+        res.writeHead(200, { "content-type": "text/javascript", "cache-control": "no-cache" });
+        res.end(readFileSync(new URL("sw.js", UI_DIR), "utf8"));
+        return;
+      }
+      if (url.pathname === "/icon.svg" || url.pathname === "/maskable-icon.svg") {
+        res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" });
+        res.end(readFileSync(new URL(url.pathname.slice(1), UI_DIR), "utf8"));
+        return;
+      }
       if (url.pathname === "/legacy") {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         res.end(WEBUI_HTML);

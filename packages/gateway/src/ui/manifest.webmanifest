@@ -1,0 +1,26 @@
+{
+ "name": "O-Harness",
+ "short_name": "O-Harness",
+ "description": "Personal agent harness - your own hardware, your own assistant",
+ "id": "o-harness",
+ "start_url": "/m",
+ "scope": "/",
+ "display": "standalone",
+ "orientation": "any",
+ "background_color": "#0d1117",
+ "theme_color": "#0d1117",
+ "icons": [
+  {
+   "src": "/icon.svg",
+   "sizes": "any",
+   "type": "image/svg+xml",
+   "purpose": "any"
+  },
+  {
+   "src": "/maskable-icon.svg",
+   "sizes": "any",
+   "type": "image/svg+xml",
+   "purpose": "maskable"
+  }
+ ]
+}

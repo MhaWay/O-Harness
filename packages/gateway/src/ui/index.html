@@ -6,6 +6,8 @@
 <title>O-Harness</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="alternate icon" href="/favicon.ico">
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -89,5 +91,6 @@
 <div id="modalHost"></div>
 <script src="/assets/client.js"></script>
 <script src="/assets/app.js"></script>
+<script>if ("serviceWorker" in navigator) { window.addEventListener("load", function () { navigator.serviceWorker.register("/sw.js").catch(function () { }); }); }</script>
 </body>
 </html>
