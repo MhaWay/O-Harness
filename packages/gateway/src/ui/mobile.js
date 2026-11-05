@@ -504,13 +504,32 @@
 
   function loadAsks() {
     var host = $("sec-tools");
-    window.OH.rpc("tools.pending", {}).then(function (list) {
-      asks = list || [];
+    Promise.all([window.OH.rpc("tools.pending", {}).catch(function () { return [] }), window.OH.rpc("grants.list", {}).catch(function () { return [] }), window.OH.rpc("device.tools.list", {}).catch(function () { return [] })]).then(function (res) {
+      var grants = res[1] || [];
+      var offered = res[2] || [];
+      asks = res[0] || [];
       var html = "<div class='card'>";
       asks.forEach(function (a) {
         html += "<div class='mrow'><b>" + esc(a.tool) + "</b> <span class='dim'>by " + esc(String(a.requester || "")) + " on " + esc(String(a.deviceId || "").slice(0, 8)) + "</span><br><span class='dim'>" + esc(JSON.stringify(a.args || {}).slice(0, 160)) + "</span><br><button data-yes='" + esc(a.id) + "'>Approve</button> <button data-rem='" + esc(a.id) + "'>Always</button> <button class='ghost' data-no='" + esc(a.id) + "'>Deny</button></div>";
       });
       if (!asks.length) html += "<div class='dim'>no pending asks</div>";
+      html += "</div><div class='card'><h3>Standing grants</h3>";
+      if (grants.length) {
+        grants.forEach(function (gr) {
+          html += "<div class='mrow'><b>" + esc(gr.tool) + "</b> <span class='dim'>device " + esc(String(gr.deviceId).slice(0, 8)) + "</span><div style='margin-top:4px'><button class='ghostbtn' data-grev='" + esc(String(gr.deviceId)) + "|" + esc(String(gr.tool)) + "'>revoke</button></div></div>";
+        });
+      } else {
+        html += "<div class='dim'>none — use Always on an approval to grant one</div>";
+      }
+      html += "</div><div class='card'><h3>Devices offering tools</h3>";
+      if (offered.length) {
+        offered.forEach(function (o) {
+          var names = (o.tools || []).map(function (t) { return typeof t === "string" ? t : t.name; });
+          html += "<div class='mrow'><b>" + esc(String(o.deviceId || "").slice(0, 8)) + "</b><br><span class='dim'>" + esc(names.join(", ")) + "</span></div>";
+        });
+      } else {
+        html += "<div class='dim'>no connected device advertises tools</div>";
+      }
       html += "</div>";
       host.innerHTML = html;
     }).catch(function (e) { host.innerHTML = "<div class='card'>" + esc(String(e)) + "</div>"; });
@@ -636,7 +655,12 @@
     $("mUnpairBtn").onclick = unpair;
     document.querySelectorAll("#mNav button").forEach(function (b) { b.onclick = function () { showTab(b.dataset.tab); }; });
     document.addEventListener("click", function (ev) {
-      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a]");
+      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a],[data-grev]");
+      if (t && t.dataset.grev) {
+        var parts = t.dataset.grev.split("|");
+        window.OH.rpc("grants.revoke", { deviceId: parts[0], tool: parts[1] }).then(function () { toast("revoked"); loadAsks(); }, function (e9) { toast(String(e9), "err"); });
+        return;
+      }
       if (!t) return;
       if (t.dataset.yes) respondAsk(t.dataset.yes, true, false);
       else if (t.dataset.rem) respondAsk(t.dataset.rem, true, true);
