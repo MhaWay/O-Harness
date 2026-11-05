@@ -148,7 +148,7 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 55. ✅ Copy button on every assistant answer (bubble meta + streamed-finished answers), with clipboard fallback over plain http.
 56. ✅ Copy button on mobile assistant bubbles (/m, parity with desktop).
 57. ✅ Memory forget: soft-delete of a memory (`memory.forget`, write scope) — the record vanishes from live search/list at once but stays readable with `validity:"history"`, honoring the ADD-only rule. Forget button per row in the Memory view, `o-h memory forget <id>` in the CLI.
-58. ✅ Session archive: soft-hide sessions from the list without deleting (`sessions.archive`, write scope)—an 🗃 button per row; dimmed rows with an “archived” tag when the archived filter is on. Archived sessions stay out of chat/session dropdowns but remain readable, openable and searchable. CLI: `o-h session archive|unarchive --id X`, `sessions list --archived`.
+58. ✅ Session archive: soft-hide sessions from the list without deleting (`sessions.archive`, write scope)—an 🗃 button per row; dimmed rows with an “archived” tag when the archived filter is on. Archived sessions stay out of chat/session dropdowns but remain readable, openable and searchable. CLI: `o-h session archive|unarchive --id X`, `sessions list --archived`. Slash commands `/archive` and `/unarchive` work in the chat box too.
 59. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
