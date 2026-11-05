@@ -259,6 +259,60 @@ function showView(name) {
       log.scrollTop = log.scrollHeight;
     } catch (e) { toast("history: " + e, "err") }
   }
+  var SLASH = [
+    ["help", "list commands"],
+    ["new", "start a new session"],
+    ["rename <t>", "rename current session"],
+    ["thinking <l>", "effort: none|low|medium|xhigh"],
+    ["models", "show configured models"],
+    ["memory <q>", "search durable memory"],
+    ["export", "download session markdown"],
+    ["pin", "pin this session"],
+    ["stop", "stop generation"]
+  ];
+  var slashEls = { menu: null };
+  var slashList = [], slashSel = 0;
+  function slashInfo(html) { $("#chatLog").appendChild(bubble("assistant", html, { mline: "<span>system</span>" })); var lg = $("#chatLog"); lg.scrollTop = lg.scrollHeight }
+  function slashMenuEl() {
+    if (!slashEls.menu) { var d = document.createElement("div"); d.className = "slashmenu"; var c = $(".composer"); if (!c) return null; c.appendChild(d); slashEls.menu = d }
+    return slashEls.menu
+  }
+  function slashHide() { var m = slashMenuEl(); if (m) m.style.display = "none" }
+  function slashOpen() { var m = slashMenuEl(); return !!m && m.style.display === "block" && slashList.length > 0 }
+  function slashRefresh() { var m = slashEls.menu; if (!m) return; $$("div", m).forEach(function (r, i) { r.className = i === slashSel ? "sel" : "" }) }
+  function slashMove(d) { if (!slashList.length) return; slashSel = Math.max(0, Math.min(slashList.length - 1, slashSel + d)); slashRefresh() }
+  function slashPick(el) { el.value = "/" + slashList[slashSel] + " "; slashHide(); el.focus() }
+  function slashCheck(el) {
+    var m = slashMenuEl(); if (!m) return;
+    var v = el.value;
+    if (v.charAt(0) === "/" && !/\s/.test(v)) {
+      slashList = SLASH.filter(function (c) { return c[0].indexOf(v.slice(1)) === 0 }).map(function (c) { return c[0] });
+      if (!slashList.length) { slashHide(); return }
+      slashSel = 0;
+      m.innerHTML = slashList.map(function (n, i) {
+        var d = SLASH.filter(function (c) { return c[0] === n })[0][1];
+        return "<div class='" + (i === slashSel ? "sel" : "") + "' data-scmd='" + n + "'>/" + n + " <span class='dim'>" + d + "</span></div>"
+      }).join("");
+      $$("div", m).forEach(function (r) { r.onclick = function () { var inp = $("#chatInput"); inp.value = "/" + r.dataset.scmd + " "; slashHide(); inp.focus() } });
+      m.style.display = "block";
+    } else slashHide();
+  }
+  async function slashRun(msg, input) {
+    var m = msg.match(/^\/([a-zA-Z]+)(?:\s+([\s\S]*))?$/);
+    var cmd = m ? m[1].toLowerCase() : "";
+    var arg = m && m[2] ? m[2].trim() : "";
+    input.value = ""; input.style.height = "auto"; slashHide();
+    if (cmd === "help") { slashInfo("<b>slash commands</b><br>" + SLASH.map(function (c) { return "/<b>" + c[0] + "</b> <span class='dim'>" + c[1] + "</span>" }).join("<br>")); return true }
+    if (cmd === "new") { var s = await rpc("sessions.create", { title: "chat " + fmtT(Date.now()) }); await loadSessionsCount(); await openChat(s.id); showView("chat"); slashInfo("started session " + esc(String(s.id).slice(0, 8))); return true }
+    if (cmd === "rename") { if (!arg) { slashInfo("usage: /rename &lt;title&gt;"); return true } await rpc("sessions.rename", { id: S.session, title: arg }); await loadSessionsCount(); slashInfo("renamed session to <b>" + esc(arg) + "</b>"); return true }
+    if (cmd === "thinking") { var lv = arg.toLowerCase(); var sel = $("#effortSel"); if (["none", "low", "medium", "xhigh"].indexOf(lv) < 0 || !sel) { slashInfo("usage: /thinking none|low|medium|xhigh"); return true } sel.value = lv; toast("thinking: " + lv, "ok"); slashInfo("effort set to <b>" + lv + "</b>"); return true }
+    if (cmd === "models") { var st = await rpc("settings.get", {}); var lines = []; (st.providers || []).forEach(function (p) { (p.models || []).forEach(function (mod) { lines.push(mod.id === ((st.default || {}).modelId) ? "<b>" + esc(mod.id) + "</b> (" + esc(p.id) + ")" : esc(mod.id) + " <span class='dim'>" + esc(p.id) + "</span>") }) }); slashInfo(lines.length ? lines.join("<br>") : "no models configured"); return true }
+    if (cmd === "memory") { if (!arg) { slashInfo("usage: /memory &lt;query&gt;"); return true } var hits = (await rpc("memory.search", { query: arg, limit: 8 })) || []; var out = hits.map(function (h) { var t = (h.memory && h.memory.text) || h.text || ""; return "· " + esc(String(t).slice(0, 160)) }).join("<br>"); slashInfo(hits.length ? out : "no memory matches <i>" + esc(arg) + "</i>"); return true }
+    if (cmd === "export") { var a = document.createElement("a"); a.href = "/sessions/export?session=" + encodeURIComponent(S.session) + "&token=" + encodeURIComponent(window.OH.getToken()); a.download = S.session + ".md"; document.body.appendChild(a); a.click(); a.remove(); slashInfo("downloading " + esc(String(S.session)) + ".md"); return true }
+    if (cmd === "pin") { var cur = ((S.sessions.filter(function (x) { return x.id === S.session })[0] || {})).pinned; await rpc("sessions.pin", { id: S.session, pinned: !cur }); await loadSessionsCount(); slashInfo(cur ? "unpinned" : "pinned session"); return true }
+    if (cmd === "stop") { stopChat(); slashInfo("stop requested"); return true }
+    return false
+  }
   var sending = false;
   var hist = [], histIdx = -1, histDraft = "";
   function fillHist(h) { hist = []; histIdx = -1; for (var i = 0; i < h.length; i++) { if (h[i].role === "user" && h[i].text) hist.push(h[i].text) } if (hist.length > 200) hist = hist.slice(-200) }
@@ -266,6 +320,10 @@ function showView(name) {
     var input = $("#chatInput");
     var msg = input.value.trim();
     if (!msg || sending) return;
+    if (msg.charAt(0) === "/" && /^\/[a-zA-Z]+(\s|$)/.test(msg)) {
+      try { var handled = await slashRun(msg, input) } catch (err) { toast(String(err), "err"); return }
+      if (handled) { if (!hist.length || hist[hist.length - 1] !== msg) hist.push(msg); histIdx = -1; return }
+    }
     if (!hist.length || hist[hist.length - 1] !== msg) hist.push(msg);
     if (hist.length > 200) hist = hist.slice(-200);
     histIdx = -1; histDraft = "";
@@ -1198,6 +1256,12 @@ function showView(name) {
     }
     if (window.OH.onEvent) window.OH.onEvent("voice.settings", function () { loadVoiceCard(); });
     $("#chatInput").addEventListener("keydown", function (e) {
+      if (slashOpen()) {
+        if (e.key === "Escape") { e.preventDefault(); slashHide(); return }
+        if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); slashPick(this); return }
+        if (e.key === "ArrowUp") { e.preventDefault(); slashMove(-1); return }
+        if (e.key === "ArrowDown") { e.preventDefault(); slashMove(1); return }
+      }
       if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); return }
       if (e.key === "ArrowUp" && this.selectionStart === 0 && this.selectionEnd === 0 && this.value.indexOf("\n") === -1) {
         if (histIdx === -1) { if (!hist.length) return; histDraft = this.value; histIdx = hist.length - 1 }
@@ -1210,7 +1274,7 @@ function showView(name) {
         e.preventDefault(); this.style.height = Math.min(this.scrollHeight, 200) + "px";
       }
     });
-    $("#chatInput").addEventListener("input", function () { this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 200) + "px" });
+    $("#chatInput").addEventListener("input", function () { slashCheck(this); this.style.height = "auto"; this.style.height = Math.min(this.scrollHeight, 200) + "px" });
     $("#paletteBtn").onclick = palette;
     document.addEventListener("keydown", function (e) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette() }
