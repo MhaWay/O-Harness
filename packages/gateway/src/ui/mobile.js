@@ -428,16 +428,16 @@
           });
         }; });
       }
-      wireRows();
-      $("mmSave").onclick = function () {
-        var t = $("mmAdd").value.trim(); if (!t) return;
-        window.OH.rpc("memory.add", { text: t, subject: "user" }).then(function () { $("mmAdd").value = ""; toast("saved"); loadMemory(); });
-      };
-      $("mmCons").onclick = function () {
-        window.OH.rpc("memory.consolidate", {}).then(function (r) { toast("consolidated " + ((r && r.memoriesChecked) || 0) + " memories", "ok"); loadMemory(); });
-      };
-      $("mSearch").onclick = function () {
-        var q = $("mmQ").value;
+      function wireCards() {
+        var sv = $("mmSave"); if (sv) sv.onclick = function () {
+          var t = $("mmAdd").value.trim(); if (!t) return;
+          window.OH.rpc("memory.add", { text: t, subject: "user" }).then(function () { $("mmAdd").value = ""; toast("saved"); loadMemory(); });
+        };
+        var cn = $("mmCons"); if (cn) cn.onclick = function () {
+          window.OH.rpc("memory.consolidate", {}).then(function (r) { toast("consolidated " + ((r && r.memoriesChecked) || 0) + " memories", "ok"); loadMemory(); });
+        };
+        var sb = $("mSearch"); if (sb) sb.onclick = function () {
+          var q = $("mmQ").value;
         window.OH.rpc("memory.search", { query: q, limit: 30 }).then(function (hits) {
           var h = "<div class='card'>";
           (hits || []).forEach(function (x) {
@@ -447,9 +447,11 @@
           if (!(hits || []).length) h += "<div class='dim'>no hits</div>";
           h += "</div>";
           host.innerHTML = html + h;
-          wireRows();
+          wireRows(); wireCards();
         });
       };
+      }
+      wireRows(); wireCards();
     }).catch(function (e) { host.innerHTML = "<div class='card'>" + esc(String(e)) + "</div>"; });
   }
 
