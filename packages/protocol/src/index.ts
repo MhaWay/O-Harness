@@ -21,6 +21,7 @@ export const Methods = {
   SessionsDelete: "sessions.delete",
   SessionsRename: "sessions.rename",
   SessionsSearch: "sessions.search",
+  SessionsExport: "sessions.export",
   SettingsGet: "settings.get",
   SettingsSave: "settings.save",
   ModelsFetch: "models.fetch",

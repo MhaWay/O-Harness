@@ -72,7 +72,7 @@ export async function main(args: string[]): Promise<void> {
       "memory add|search|list|consolidate                  durable temporal memory",
       "pair create|list|revoke|redeem                      pairing codes + device secrets with scopes",
       "tools list|call|pending|respond / grants            device-offered tools + approvals",
-      "sessions list / sessions search <text> / session show|create|append   session logs",
+      "sessions list / sessions search <text> / session show|create|append|export   session logs",
       "node connect [--url wss://..] [--insecure]          run a node that connects to a gateway",
     ].join("\n"));
     return;
@@ -655,6 +655,14 @@ export async function main(args: string[]): Promise<void> {
       const data = withoutFlag(rest.slice(1), "kind").join(" ") || undefined;
       const e = await callOnce("sessions.append", { id, kind, from: (await import("node:os")).hostname(), data }, port);
       console.log(JSON.stringify(e));
+      return;
+    }
+    if (sub === "export") {
+      const path = flag(args, "out") ?? (id + ".md");
+      const r = await callOnce("sessions.export", { id }, port) as { markdown: string };
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(path, r.markdown, "utf-8");
+      console.log("wrote " + r.markdown.length + " chars -> " + path);
       return;
     }
     if (sub === "rename") {

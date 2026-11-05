@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { decode, encode, Methods, Msg, PROTOCOL_VERSION } from "@o-harness/protocol";
-import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, atomicWrite, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
+import { Bus, PluginHost, Registry, RpcRouter, SessionsStore, MemoryStore, PairingStore, GrantsStore, SCOPE_FOR_METHOD, publicDevice, atomicWrite, sessionToMarkdown, type DeviceRuntime, type GatewayApi, type Handler, type OHarnessPlugin } from "@o-harness/core";
 import { SchedulerRuntime } from './scheduler.ts';
 import { ToolBroker, type OfferedTool } from "./toolbroker.ts";
 import { ensureOverlay } from "./overlay.ts";
@@ -275,6 +275,11 @@ export class Gateway {
       const ok = this.sessions.rename(id, typeof p?.title === "string" ? p.title : "");
       if (ok) this.#broadcastEvent("sessions.changed", { sessionId: id });
       return { ok };
+    });
+    this.rpc.set(Methods.SessionsExport, (p) => {
+      const s = this.sessions.get(String(p?.id ?? "main"));
+      if (!s) throw new Error("unknown session: " + String(p?.id ?? "main"));
+      return { id: s.id, title: s.title, markdown: sessionToMarkdown(s) };
     });
     this.rpc.set(Methods.SessionsSearch, (p) => {
       const q = String(p?.q ?? "");
@@ -660,6 +665,21 @@ export class Gateway {
         } catch {
           res.writeHead(404); res.end("not found");
         }
+        return;
+      }
+      if (url.pathname === "/sessions/export") {
+        const ctx = this.#checkAuth(req);
+        if (!ctx) { res.writeHead(401); res.end("unauthorized"); return; }
+        const id = url.searchParams.get("session") ?? "main";
+        const s = this.sessions.get(id);
+        if (!s) { res.writeHead(404, { "content-type": "text/plain" }); res.end("unknown session: " + id); return; }
+        const mdText = sessionToMarkdown(s);
+        res.writeHead(200, {
+          "content-type": "text/markdown; charset=utf-8",
+          "content-disposition": "attachment; filename=\"" + id.replace(/[^a-z0-9_-]/g, "") + ".md\"",
+          "cache-control": "no-store",
+        });
+        res.end(mdText);
         return;
       }
       if (url.pathname === "/api/voice/tts") {

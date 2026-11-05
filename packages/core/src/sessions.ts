@@ -129,3 +129,29 @@ export class SessionsStore {
     return true;
   }
 }
+
+/** Render a session transcript as Markdown: chat entries as blocks, others as metadata lists. */
+export function sessionToMarkdown(s: Session): string {
+  const out: string[] = [
+    "# " + (s.title || s.id),
+    "",
+    "- session: `" + s.id + "`",
+    "- created: " + new Date(s.createdAt).toISOString(),
+    "- entries: " + s.entries.length,
+    "- exported: " + new Date().toISOString(),
+    "",
+  ];
+  for (const e of s.entries) {
+    const d = e.data as { role?: unknown; text?: unknown } | undefined;
+    const when = new Date(e.ts).toISOString().replace("T", " ").slice(0, 19);
+    if (e.kind === "chat" && typeof d?.text === "string") {
+      out.push("### " + when + " — " + String(d.role ?? ""), "", d.text, "");
+    } else {
+      out.push("- `" + when + "` **" + e.kind + "** (" + e.from + ")");
+      if (typeof d === "string" || typeof d === "number" || typeof d === "boolean") out.push("  > " + String(d).replace(/\n/g, "\n  > "));
+      else if (d?.text !== undefined) out.push("  > " + String(d.text).replace(/\n/g, "\n  > "));
+      else if (d !== undefined) out.push("  ```json\n  " + JSON.stringify(d).slice(0, 2000) + "\n  ```");
+    }
+  }
+  return out.join("\n") + "\n";
+}
