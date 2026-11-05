@@ -1234,7 +1234,7 @@ function showView(name) {
             $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
           }
         }
-      } else if (topic === "sessions.changed") loadSessionsCount();
+      } else if (topic === "sessions.changed") { loadSessionsCount(); if (S.view === "sessions") loadSessions(); }
       else if (topic === "settings.changed") { rpc("settings.get", {}).then(function (st) { S.settings = st; renderModelPill(); if (S.view === "settings") loadSettings() }).catch(function () { }) }
       else if (topic === "chat.tool") {
         if (S.streaming && data && data.sessionId === S.session) {

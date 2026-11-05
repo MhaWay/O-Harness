@@ -67,8 +67,17 @@ export class ChatRuntime {
     const resolved = this.#opts.settings.resolveDefault();
     if (!resolved) throw new Error("no default model configured (settings.default)");
 
+    const firstChat = !s.entries.some((e2) => e2.kind === "chat" && (e2.data as any)?.role === "user");
     const userEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "user", kind: "chat", data: { role: "user", text: message } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: userEntry });
+    if (firstChat) {
+      // auto-title placeholder sessions from the first message (dsh-style)
+      const placeholder = /^(main|session|chat( \d.*| \d*)?)$/.test((s.title ?? "").trim());
+      if (placeholder) {
+        const t = message.replace(/\s+/g, " ").trim().slice(0, 60) || "chat";
+        if (this.#opts.sessions.rename(sessionId, t)) this.#opts.broadcast?.("sessions.changed", { sessionId, title: t });
+      }
+    }
 
     // context management: bounded verbatim tail + rolling summary (Letta/dsh-style)
     const chatEntries = s.entries.filter((e) => e.kind === "chat" && (e.data as any)?.role);
