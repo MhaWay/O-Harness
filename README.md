@@ -243,10 +243,8 @@ serving the GUI at `http://<machine-ip>:18711/` and the mobile page `/m`. Data l
 The app tree is `/opt/o-harness` (extracted WITHOUT dereferencing, workspace symlinks are load-bearing).
 
 ```sh
-# deploy loop (run from the dev container):
-tar -cf /tmp/oh-repo.tar -C /root/Projects/O-Harness --exclude=.git .   # raw tar, NO -h
-docker cp /tmp/oh-repo.tar gx10-8e13:/tmp/   # or docker run ... < tar pipe
-ssh/docker chroot /host /opt/oh-redeploy.sh   # re-extract + restart + /health check
+# from the dev container, one command deploys to the machine:
+bash scripts/deploy.sh   # tar (raw, NO -h) -> extract /opt/o-harness -> restart container -> /health
 ```
 
 Redeploy script `/opt/oh-redeploy.sh` (on host): stops the container, re-extracts `/tmp/oh-repo.tar`
