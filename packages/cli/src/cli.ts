@@ -142,6 +142,12 @@ export async function main(args: string[]): Promise<void> {
       for (const e of h) console.log(e.seq + " [" + e.role + "] " + e.text);
       return;
     }
+    if (sub === "stop") {
+      const sessionId = flag(cargs, "session") ?? "main";
+      const r = await callOnce("chat.abort", { sessionId }, port);
+      console.log(JSON.stringify(r));
+      return;
+    }
     throw new Error("unknown chat subcommand: " + sub);
   }
 

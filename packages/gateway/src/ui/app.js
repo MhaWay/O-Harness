@@ -260,7 +260,7 @@ function showView(name) {
     var input = $("#chatInput");
     var msg = input.value.trim();
     if (!msg || sending) return;
-    sending = true; $("#sendBtn").disabled = true;
+    sending = true; var sb = $("#sendBtn"); sb.classList.add("stop"); sb.innerHTML = "&#9632;"; sb.title = "stop generation"; sb.disabled = false;
     input.value = ""; input.style.height = "auto";
     $("#chatLog").appendChild(bubble("user", md(msg), { mline: "<span>you</span>" }));
     var wait = bubble("assistant", '<span class="thinking"><i></i><i></i><i></i></span>', { mline: "<span></span>" });
@@ -287,9 +287,14 @@ function showView(name) {
       if (S.streaming) S.streaming.innerHTML = '<span class="dim">error: ' + esc(String(e)) + "</span>";
       toast(String(e), "err");
     }
-    S.streaming = null; sending = false; $("#sendBtn").disabled = false;
+    S.streaming = null; sending = false; var sb2 = $("#sendBtn"); sb2.classList.remove("stop"); sb2.innerHTML = "&#11014;"; sb2.title = "send"; sb2.disabled = false;
     loadSessionsCount();
     $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+  }
+  function stopChat() {
+    if (!sending) return;
+    toast("stopping…");
+    rpc("chat.abort", { sessionId: S.session }).catch(function () { });
   }
   window.sendChat = sendChat;
 
@@ -1101,7 +1106,7 @@ function showView(name) {
     $("#newChatBtn").onclick = async function () {
       try { var s = await rpc("sessions.create", { title: "chat " + fmtT(Date.now()) }); await loadSessionsCount(); await openChat(s.id); showView("chat") } catch (e) { toast(String(e), "err") }
     };
-    $("#sendBtn").onclick = sendChat;
+    $("#sendBtn").onclick = function () { if (sending) stopChat(); else sendChat(); };
     var mb2 = $("#micBtn"); if (mb2) mb2.onclick = function () { micToggle() };
     var sb2 = $("#speakBtn");
     if (sb2) {

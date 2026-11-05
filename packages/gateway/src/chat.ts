@@ -61,7 +61,7 @@ export class ChatRuntime {
   constructor(opts: ChatOptions) { this.#opts = opts; }
 
   /** Send a user message into a session and get the assistant reply (runs a bounded tool loop; appends both roles to the session log). */
-  async chat(sessionId: string, message: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string } = {}): Promise<{ text: string; entries: number; toolSteps?: ChatToolStep[] }> {
+  async chat(sessionId: string, message: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal } = {}): Promise<{ text: string; entries: number; toolSteps?: ChatToolStep[] }> {
     const s = this.#opts.sessions.get(sessionId);
     if (!s) throw new Error("unknown session: " + sessionId);
     const resolved = this.#opts.settings.resolveDefault();
@@ -136,22 +136,34 @@ export class ChatRuntime {
     const steps: ChatToolStep[] = [];
     let text = "";
     let thinkAll = "";
+    let live = "";
+    let liveMark = 0;
+    const aborted = () => opts.signal?.aborted === true;
     try {
       for (let turn = 0; turn < maxTurns; turn++) {
+        if (aborted()) { stopReason = "user-abort"; break; }
         if (turn > 0) {
           if (Date.now() > deadline) { stopReason = "wall-clock"; break; }
           if (remIdx >= 0) (messages[remIdx] as any).content = REMINDER;
           else { messages.push({ role: "user", content: REMINDER }); remIdx = messages.length - 1; }
         }
-        const out = await chatOnceStream({
-          baseUrl: resolved.baseUrl, apiKey: resolved.apiKey,
-          model: opts.model ?? resolved.model.id,
-          effort: opts.effort ?? resolved.effort,
-          messages, tools: toolDefs,
-        }, (tok, reasoning) => {
-          if (reasoning) thinkAll += tok;
-          this.#opts.broadcast?.("chat.stream", { sessionId, turn, tok: tok || undefined, reasoning: reasoning ? true : undefined });
-        });
+        let out: any;
+        liveMark = live.length;
+        try {
+          out = await chatOnceStream({
+            baseUrl: resolved.baseUrl, apiKey: resolved.apiKey,
+            model: opts.model ?? resolved.model.id,
+            effort: opts.effort ?? resolved.effort,
+            messages, tools: toolDefs,
+            ...(opts.signal ? { signal: opts.signal } : {}),
+          }, (tok, reasoning) => {
+            if (reasoning) thinkAll += tok; else live += tok;
+            this.#opts.broadcast?.("chat.stream", { sessionId, turn, tok: tok || undefined, reasoning: reasoning ? true : undefined });
+          });
+        } catch (err) {
+          if (aborted()) { text = text || live.slice(liveMark).trim(); stopReason = "user-abort"; break; }
+          throw err;
+        }
         const msg = out?.choices?.[0]?.message ?? {};
         if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
           messages.push({ role: "assistant", content: msg.content ?? "", tool_calls: msg.tool_calls });
@@ -191,7 +203,7 @@ export class ChatRuntime {
         text = String(msg.content ?? "").trim();
         break;
       }
-      if (!text && steps.length) {
+      if (!text && steps.length && !aborted()) {
         // stopped without a final answer (deadline / death-loop): wrap up instead of stopping cold
         try {
           const clean = messages.filter((_m, i) => i !== remIdx);
@@ -206,7 +218,7 @@ export class ChatRuntime {
       // model/loop failure mid-way: surface partial progress
       text = text || "error: " + String(err);
     }
-    if (!text) text = "(empty reply)";
+    if (!text) text = aborted() ? "(stopped)" : "(empty reply)";
     const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined, steps: steps.length ? steps.map((x) => ({ tool: x.tool, args: Object.fromEntries(Object.entries(x.args ?? {}).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 300) : v])) })) : undefined, reasoning: thinkAll ? thinkAll.slice(0, 6000) : undefined } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: asEntry });
     return { text, entries: s.entries.length, toolSteps: steps.length ? steps : undefined };

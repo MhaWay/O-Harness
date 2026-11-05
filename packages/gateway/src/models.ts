@@ -147,7 +147,7 @@ export async function chatOnce(opts: { baseUrl: string; apiKey?: string; model: 
 
 
 /** Streaming chatOnce: consumes SSE chunks, calls onToken for each content delta, returns the same shape as chatOnce. */
-export async function chatOnceStream(opts: { baseUrl: string; apiKey?: string; model: string; messages: unknown[]; effort?: Effort; extra?: Record<string, unknown>; tools?: unknown[] }, onToken?: (tok: string, reasoning?: boolean) => void): Promise<any> {
+export async function chatOnceStream(opts: { baseUrl: string; apiKey?: string; model: string; messages: unknown[]; effort?: Effort; extra?: Record<string, unknown>; tools?: unknown[]; signal?: AbortSignal }, onToken?: (tok: string, reasoning?: boolean) => void): Promise<any> {
   const body: Record<string, unknown> = {
     model: opts.model,
     messages: opts.messages,
@@ -161,7 +161,7 @@ export async function chatOnceStream(opts: { baseUrl: string; apiKey?: string; m
     method: "POST",
     headers: { "content-type": "application/json", ...(opts.apiKey ? { authorization: "Bearer " + opts.apiKey } : {}) },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(180_000),
+    signal: opts.signal ? AbortSignal.any([AbortSignal.timeout(180_000), opts.signal]) : AbortSignal.timeout(180_000),
   });
   if (!res.ok || !res.body) throw new Error("chat/completions HTTP " + res.status + ": " + (await res.text().catch(() => "")).slice(0, 300));
   const dec = new TextDecoder();

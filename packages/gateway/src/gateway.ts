@@ -131,6 +131,7 @@ export class Gateway {
   #dataDir = dataDirOf();
   instances: InstanceRegistry | null = null;
   #warnedOthers = false;
+  #chatAborts = new Map<string, AbortController>();
   #pairHits = new Map<string, { n: number; resetAt: number }>();
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
@@ -329,10 +330,26 @@ export class Gateway {
       const sessionId = String(p?.sessionId ?? "main");
       const message = typeof p?.message === "string" ? (p.message as string) : String(p?.message ?? "");
       if (!message.trim()) throw new Error("chat.send: message required");
-      return await this.chat.chat(sessionId, message, {
-        effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
-        model: p?.model ? String(p.model) : undefined,
-      });
+      // a new message in the same session supersedes (aborts) any in-flight run
+      this.#chatAborts.get(sessionId)?.abort();
+      const ac = new AbortController();
+      this.#chatAborts.set(sessionId, ac);
+      try {
+        return await this.chat.chat(sessionId, message, {
+          effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
+          model: p?.model ? String(p.model) : undefined,
+          signal: ac.signal,
+        });
+      } finally {
+        if (this.#chatAborts.get(sessionId) === ac) this.#chatAborts.delete(sessionId);
+      }
+    });
+    this.rpc.set(Methods.ChatAbort, (p) => {
+      const sessionId = String(p?.sessionId ?? "main");
+      const ac = this.#chatAborts.get(sessionId);
+      if (!ac) return { ok: false, reason: "not running" };
+      ac.abort();
+      return { ok: true };
     });
     this.rpc.set(Methods.ChatHistory, (p) => {
       const s = this.sessions.get(String(p?.sessionId ?? "main"));
