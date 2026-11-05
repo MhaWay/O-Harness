@@ -632,8 +632,8 @@ function showView(name) {
     $("#v-sessions").innerHTML =
       '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button><input id="sessQ" placeholder="search sessions... (Enter)" style="flex:1"><button class="ghost" id="sessQGo">Search</button></div><div id="sessHits"></div>' +
       "<table><tr><th>title</th><th>id</th><th>entries</th><th>created</th><th></th></tr>" +
-      S.sessions.slice().sort(function (a, b) { return b.createdAt - a.createdAt }).map(function (s) {
-        return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button> <a class='ghost' download style='text-decoration:none;padding:4px 8px' title='download markdown' href=\"/sessions/export?session=" + encodeURIComponent(String(s.id)) + "&token=" + encodeURIComponent(window.OH.getToken()) + "\">⬇</a>" +
+      S.sessions.slice().sort(function (a, b) { return (Number(!!b.pinned) - Number(!!a.pinned)) || (b.createdAt - a.createdAt) }).map(function (s) {
+        return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button> <button class='ghost' data-pin='" + esc(String(s.id)) + "' title='" + (s.pinned ? "unpin" : "pin") + "'>" + (s.pinned ? "📌" : "📍") + "</button> <a class='ghost' download style='text-decoration:none;padding:4px 8px' title='download markdown' href=\"/sessions/export?session=" + encodeURIComponent(String(s.id)) + "&token=" + encodeURIComponent(window.OH.getToken()) + "\">⬇</a>" +
           (String(s.id) !== "main" ? " <button class='ghost' data-rename='" + esc(s.id) + "' title='rename'>✎</button> <button class='ghost' data-del='" + esc(s.id) + "' title='delete session'>✕</button>" : "") + "</td></tr>";
       }).join("") + "</table>";
     $("#newSessBtn").onclick = function () {
@@ -685,6 +685,12 @@ function showView(name) {
     };
     $("#sessQGo").onclick = runSessSearch;
     $("#sessQ").onkeydown = function (ev) { if (ev.key === "Enter") runSessSearch() };
+    $$("#v-sessions [data-pin]").forEach(function (b) {
+      b.onclick = async function () {
+        await rpc("sessions.pin", { id: b.dataset.pin, pinned: !((S.sessions.filter(function (x) { return String(x.id) === b.dataset.pin })[0] || {}).pinned) });
+        await loadSessionsCount(); if (S.view === "sessions") loadSessions();
+      };
+    });
   }
   async function loadMinions() {
     var host = $("#v-minions");

@@ -22,6 +22,7 @@ export const Methods = {
   SessionsRename: "sessions.rename",
   SessionsSearch: "sessions.search",
   SessionsExport: "sessions.export",
+  SessionsPin: "sessions.pin",
   SettingsGet: "settings.get",
   SettingsSave: "settings.save",
   ModelsFetch: "models.fetch",

@@ -281,6 +281,12 @@ export class Gateway {
       if (!s) throw new Error("unknown session: " + String(p?.id ?? "main"));
       return { id: s.id, title: s.title, markdown: sessionToMarkdown(s) };
     });
+    this.rpc.set(Methods.SessionsPin, (p) => {
+      const id = String(p?.id ?? "");
+      const ok = this.sessions.pin(id, p?.pinned !== false);
+      if (ok) this.#broadcastEvent("sessions.changed", { sessionId: id, pinned: !!p?.pinned });
+      return { ok };
+    });
     this.rpc.set(Methods.SessionsSearch, (p) => {
       const q = String(p?.q ?? "");
       if (!q.trim()) throw new Error("sessions.search: q required");

@@ -676,6 +676,11 @@ export async function main(args: string[]): Promise<void> {
       console.log(o.ok ? "deleted " + id : "refused or unknown: " + id + (id === "main" ? " (main is protected)" : ""));
       return;
     }
+    if (sub === "pin" || sub === "unpin") {
+      const o = await callOnce("sessions.pin", { id, pinned: sub === "pin" }, port) as { ok: boolean };
+      console.log(o.ok ? (sub === "pin" ? "pinned " : "unpinned ") + id : "unknown session: " + id);
+      return;
+    }
     throw new Error("usage: o-h session show|create|append|rename|delete [--id <id>] [--title t] [--kind k] [text]");
   }
 

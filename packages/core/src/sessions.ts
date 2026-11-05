@@ -16,6 +16,7 @@ export interface Session {
   title: string;
   createdAt: number;
   entries: SessionEntry[];
+  pinned?: boolean;
 }
 
 export class SessionsStore {
@@ -52,11 +53,12 @@ export class SessionsStore {
 
   list() {
     return [...this.#sessions.values()]
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || (b.createdAt - a.createdAt))
       .map((s) => ({
         id: s.id,
         title: s.title,
         createdAt: s.createdAt,
+        pinned: !!s.pinned,
         count: s.entries.length,
         lastEntry: s.entries.length ? s.entries[s.entries.length - 1] : undefined,
       }));
@@ -107,6 +109,15 @@ export class SessionsStore {
     if (id === "main" || !this.#sessions.has(id)) return false;
     this.#sessions.delete(id);
     try { rmSync(this.#path(id)); } catch { /* already gone */ }
+    return true;
+  }
+
+  /** Pin/unpin a session (pinned sessions sort first in list()). Returns false if unknown. */
+  pin(id: string, pinned = true): boolean {
+    const s = this.#sessions.get(id);
+    if (!s) return false;
+    s.pinned = !!pinned;
+    this.#persist(id);
     return true;
   }
 
