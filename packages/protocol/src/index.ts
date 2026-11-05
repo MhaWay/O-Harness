@@ -61,6 +61,7 @@ export const Methods = {
   LogsTail: "logs.tail",
   LogsStats: "logs.stats",
   LogsResolve: "logs.resolve",
+  LogsAudit: "logs.audit",
   VoiceGet: "voice.get",
   VoiceSave: "voice.save",
   VoiceSpeak: "voice.speak",

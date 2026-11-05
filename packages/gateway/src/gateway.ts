@@ -18,6 +18,7 @@ import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoS
 import { runBackup, listBackups, restoreBackup } from "./backup.ts";
 import { runDoctor } from "./doctor.ts";
 import { LogStore } from "./log.ts";
+import { AuditStore } from "./audit.ts";
 import { logToolDefs, resolveLogs } from "./logtools.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
 import { MOBILE_HTML } from "./mobile.ts";
@@ -105,6 +106,7 @@ export class Gateway {
   rpc = new RpcRouter();
   plugins = new PluginHost();
   log: LogStore;
+  audit: AuditStore;
   sessions: SessionsStore;
   memory: MemoryStore;
   settings: SettingsStore;
@@ -141,6 +143,7 @@ export class Gateway {
     this.memory = new MemoryStore(dataDirOf(dataDir));
     this.pairing = new PairingStore(dataDirOf(dataDir));
     this.log = new LogStore(join(dataDirOf(dataDir), "logs"));
+    this.audit = new AuditStore(join(dataDirOf(dataDir), "audit"));
     this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
     this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
     this.monitor = new MonitorStore(join(dataDirOf(dataDir), "monitor"));
@@ -373,6 +376,7 @@ export class Gateway {
     });
     this.rpc.set(Methods.LogsTail, (p) => this.log.tail({ limit: p?.limit ? Number(p.limit) : 100, level: p?.level, module: p?.module, q: p?.q }));
     this.rpc.set(Methods.LogsStats, () => this.log.stats());
+    this.rpc.set(Methods.LogsAudit, (p) => ({ events: this.audit.tail({ limit: p?.limit ? Number(p.limit) : 100, q: p?.q ? String(p.q) : undefined }) }));
     this.rpc.set(Methods.LogsResolve, async (p) => {
       const rq = p?.q ? String(p.q) : undefined;
       const lvl = p?.level ? String(p.level) as "debug" | "info" | "warn" | "error" : undefined;
@@ -391,7 +395,7 @@ export class Gateway {
       return c;
     });
     this.rpc.set(Methods.PairingList, () => this.pairing.list().map((d) => ({ ...d, secret: undefined })));
-    this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); return { ok: true }; });
+    this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); this.audit.note("device.revoke", { id: String(p?.id ?? "") }); return { ok: true }; });
     // --- authentication methods (password / sessions / oauth) ---
     this.rpc.set(Methods.AuthInfo, () => ({
       hasPassword: !!this.auth.pw,
@@ -483,6 +487,7 @@ export class Gateway {
       const file = String(p?.file ?? "");
       if (!file) throw new Error("restore needs { file: path }");
       this.log.warn("backup", "restoring from " + file + " — restart required for stores to reload cleanly");
+      this.audit.note("backup.restore", { file });
       return { ...restoreBackup(this.#dataDir, file, { dryRun: Boolean(p?.dryRun) }), restartRequired: true };
     });
 
@@ -620,6 +625,7 @@ export class Gateway {
         req.on("end", async () => {
           const ip = (req.socket.remoteAddress ?? "?unknown").replace(/^::ffff:/, "");
           if (!this.#loginAllowed(ip)) {
+            this.audit.note("login.limit", { ip });
             res.writeHead(429, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "too many login attempts, wait 5 minutes" }));
             return;
@@ -633,11 +639,13 @@ export class Gateway {
           }
           if (!this.auth.verify(pw)) {
             this.log.warn("auth", "failed login", { ip });
+            this.audit.note("login.deny", { ip });
             res.writeHead(401, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: "wrong password" }));
             return;
           }
           const { id } = this.auth.newSession({ kind: "password", label: "password login" });
+          this.audit.note("login.ok", { ip });
           res.writeHead(200, { "content-type": "application/json", "set-cookie": sessionCookieValue(id) });
           res.end(JSON.stringify({ ok: true, sessionId: id }));
         });
@@ -718,9 +726,11 @@ export class Gateway {
           try {
             const { code, name } = JSON.parse(body || "{}") as { code?: string; name?: string };
             const { device, secret } = this.pairing.redeem(String(code ?? ""), String(name ?? "device"));
+            this.audit.note("pair.redeem", { ip, deviceId: device.id });
             res.writeHead(200, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: true, deviceId: device.id, secret }));
           } catch (err) {
+            this.audit.note("pair.deny", { ip, error: err instanceof Error ? err.message : String(err) });
             res.writeHead(400, { "content-type": "application/json" });
             res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
             try { this.pairing.noteBadCode(String(JSON.parse(body || "{}").code ?? "")); } catch { /* noop */ }
@@ -850,8 +860,12 @@ export class Gateway {
 
   #checkScope(ctx: AuthCtx | undefined, method: string) {
     if (!ctx || ctx.admin || !ctx.deviceId) return;
-    const required = SCOPE_FOR_METHOD[method] ?? "read";
-    if (!this.pairing.scopesFor(ctx.deviceId).includes(required)) {
+    const required = SCOPE_FOR_METHOD[method] ?? "*"; // unmapped = fail-closed (admin ctx returns above)
+    const granted = this.pairing.scopesFor(ctx.deviceId);
+    // hierarchy: admin satisfies write, write satisfies read
+    const need = required === "write" ? ["write", "admin"] : required === "read" ? ["read", "write", "admin"] : [required];
+    if (required === "*" || !granted.some((s) => need.includes(s))) {
+      this.audit.note("scope.deny", { deviceId: ctx.deviceId, method, required });
       throw new Error("device " + ctx.deviceId + " lacks scope '" + required + "' for " + method);
     }
   }
