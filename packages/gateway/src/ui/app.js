@@ -1106,6 +1106,8 @@ function showView(name) {
     ["Go to Tools", function () { showView("tools") }],
     ["Go to Devices", function () { showView("devices") }],
     ["Go to Settings", function () { showView("settings") }],
+    ["Go to Logs", function () { showView("logs") }],
+    ["Go to Realtime", function () { showView("realtime") }],
     ["New chat session", function () { showView("sessions"); setTimeout(function () { var b = $("#newSessBtn"); if (b) b.click() }, 100) }],
     ["Dispatch minion task", function () { showView("minions"); setTimeout(function () { var f = $("#mTask"); if (f) f.focus() }, 50) }],
     ["Pair a new device", function () { showView("devices"); setTimeout(function () { var f = $("#pairKind"); if (f) f.focus() }, 50) }],
