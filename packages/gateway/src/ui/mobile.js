@@ -655,12 +655,56 @@
         (mon.lastCheckAt ? "<div class='dim'>last check " + ago(mon.lastCheckAt) + "</div>" : "") + "</div>";
     }, function (e) { host.innerHTML = "<div class='dim'>error: " + esc(String(e)) + "</div>" });
   }
+  var mlQ = "", mlLevel = "", mlSrc = "log";
+  function loadLogs() {
+    var host = $("sec-logs");
+    if (!host) return;
+    host.innerHTML =
+      "<div class='row' style='gap:6px;margin:6px 0'>" +
+      "<input id='mlQ' placeholder='search...' style='flex:1' value='" + esc(mlQ) + "'>" +
+      "<select id='mlLevel' style='width:86px'><option value=''>all</option><option value='warn'>warn</option><option value='error'>error</option></select>" +
+      "<button class='ghostbtn' id='mlGo'>go</button>" +
+      "<button class='ghostbtn' id='mlSrc'>" + (mlSrc === "audit" ? "show logs" : "show audit") + "</button>" +
+      "</div><div id='mlStat' class='dim' style='margin:0 0 6px'></div><div id='mlList'></div>";
+    var draw = function () {
+      if (mlSrc === "audit") {
+        window.OH.rpc("logs.audit", Object.assign({ limit: 120 }, mlQ ? { q: mlQ } : {})).then(function (a) {
+          var evs = (a && a.events) || [];
+          $("mlList").innerHTML = evs.map(function (ev) {
+            var who = ev.actor || (ev.deviceId ? "device " + ev.deviceId : "");
+            return "<div class='mrow'><b>" + esc(String(ev.event).toUpperCase()) + "</b>" + (who ? " <span class='dim'>" + esc(who) + "</span>" : "") + (ev.ip ? " <span class='dim'>" + esc(ev.ip) + "</span>" : "") + " <span class='dim'>" + ago(ev.at) + "</span></div>";
+          }).join("") || "<div class='dim'>no audit events</div>";
+          $("mlStat").textContent = evs.length + " audited events";
+        }, function (e) { $("mlList").innerHTML = "<div class='dim'>error: " + esc(String(e)) + "</div>"; });
+      } else {
+        var p = { limit: 120 };
+        if (mlLevel) p.level = mlLevel;
+        if (mlQ) p.q = mlQ;
+        window.OH.rpc("logs.tail", p).then(function (r) {
+          var es = (r && r.entries) || [];
+          $("mlList").innerHTML = es.map(function (e2) {
+            var dot = e2.level === "error" ? "<span style='color:#e0483e'>x</span>" : (e2.level === "warn" ? "<span style='color:#e0a03e'>x</span>" : "<span class='dim'>x</span>");
+            var t = new Date(e2.ts);
+            var hh = ("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2) + ":" + ("0" + t.getSeconds()).slice(-2);
+            return "<div class='mrow'>" + dot + " <span class='dim'>" + hh + "</span> <b>" + esc(e2.module) + "</b> " + esc(String(e2.msg).slice(0, 110)) + "</div>";
+          }).join("") || "<div class='dim'>no matching entries</div>";
+          $("mlStat").textContent = es.length + " shown of " + (r && r.total) + " entries";
+        }, function (e) { $("mlList").innerHTML = "<div class='dim'>error: " + esc(String(e)) + "</div>"; });
+      }
+    };
+    $("mlLevel").value = mlLevel;
+    $("mlGo").onclick = function () { mlQ = $("mlQ").value.trim(); mlLevel = $("mlLevel").value; draw(); };
+    $("mlQ").onkeydown = function (ev) { if (ev.key === "Enter") { mlQ = $("mlQ").value.trim(); draw(); } };
+    $("mlSrc").onclick = function () { mlSrc = mlSrc === "audit" ? "log" : "audit"; loadLogs(); };
+    draw();
+  }
   function tabOn(name) { var b = document.querySelector("#mNav button[data-tab='" + name + "']"); return b && b.classList.contains("on"); }
   function showTab(name) {
     document.querySelectorAll("#mNav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === name); });
     document.querySelectorAll(".msec").forEach(function (s) { s.classList.toggle("on", s.id === "sec-" + name); });
     if (name === "pulse") loadPulse();
     else if (name === "minions") loadMinions();
+    else if (name === "logs") loadLogs();
     else if (name === "sched") loadSched();
     else if (name === "memory") loadMemory();
     else if (name === "tools") loadAsks();
