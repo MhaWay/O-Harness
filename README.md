@@ -134,7 +134,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 41. ✅ Live status widgets: the topbar model pill shows the active model + thinking level (updates in place via `settings.changed`), and the sidebar foot shows protocol, session count and gateway pid — both were dead placeholders before
 42. ✅ Session housekeeping: the Sessions view can now rename (✎) and delete (✕) conversations from the GUI, and `o-h session rename --id … <title>` / `o-h session delete --id …` work from the CLI (subcommand first, then `--id`). Deletes are refused for `main` (protected), the GUI asks for confirmation with the entry count, and removals are audited as `sessions.delete`.
 43. ✅ Chat markdown upgrade: triple-backtick fences render as proper code blocks with a copy button (works on plain http via an execCommand fallback), and pipe-style tables render as real `<table>`s with header row — plus a fix so a fenced block can no longer get swallowed into a preceding paragraph.
-44. Next: npm publish (deferred by user)
+44. ✅ Stop generation: the send button turns into a red ■ stop button while the model is streaming — pressing it (or `o-h chat stop [--session S]`, or `chat.abort` via RPC) aborts the run mid-stream; everything generated so far is kept (partial answer persisted with the chat entry), the loop also breaks between tool calls, and a new message in the same session supersedes the previous run.
+45. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
