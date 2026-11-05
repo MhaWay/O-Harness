@@ -372,6 +372,42 @@
       };
     }).catch(function (e) { host.innerHTML = "<div class='card'>" + esc(String(e)) + "</div>"; });
   }
+  function fmtCad(c) {
+    if (!c) return "?";
+    if (c.type === "every") return "every " + c.minutes + "m";
+    if (c.type === "daily") return "daily " + c.time;
+    return "once " + new Date(c.at).toLocaleString();
+  }
+  function loadSched() {
+    var host = $("sec-sched");
+    if (!host) return;
+    window.OH.rpc("schedule.list", {}).then(function (js) {
+      var html = "<div class='card'><h3>Scheduled jobs</h3>";
+      if (!(js || []).length) html += "<div class='dim'>none yet</div>";
+      (js || []).forEach(function (j) {
+        html += "<div class='mrow' style='" + (j.disabled ? "opacity:.5" : "") + "'>"
+          + "<b>" + esc(j.label || j.id) + "</b> <span class='badge'>" + esc(j.kind) + "</span> <span class='dim'>" + esc(fmtCad(j.cadence)) + "</span>"
+          + "<br><span class='dim'>next " + (j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : "—") + (j.count ? " · ran " + j.count : "") + "</span>"
+          + "<div style='margin-top:4px;display:flex;gap:6px'>"
+          + "<button class='ghostbtn' data-srun='" + esc(j.id) + "'>run now</button>"
+          + "<button class='ghostbtn' data-sdis='" + esc(j.id) + "'>" + (j.disabled ? "enable" : "disable") + "</button>"
+          + "<button class='ghostbtn' data-sdel='" + esc(j.id) + "'>remove</button>"
+          + "</div></div>";
+      });
+      html += "</div>";
+      host.innerHTML = html;
+      host.querySelectorAll("[data-srun]").forEach(function (b) { b.onclick = function () { window.OH.rpc("schedule.runNow", { id: b.dataset.srun }).then(function (r) { toast(r && r.ok ? "ran" : "unknown job", r && r.ok ? "ok" : "err"); loadSched(); }); }; });
+      host.querySelectorAll("[data-sdis]").forEach(function (b) { b.onclick = function () {
+        var cur = (window.__ohJobs || []).filter(function (x) { return x.id === b.dataset.sdis })[0];
+        window.OH.rpc("schedule.setDisabled", { id: b.dataset.sdis, disabled: !(cur && cur.disabled) }).then(function () { loadSched(); });
+      }; });
+      host.querySelectorAll("[data-sdel]").forEach(function (b) { b.onclick = function () {
+        if (!confirm("remove job?")) return;
+        window.OH.rpc("schedule.remove", { id: b.dataset.sdel }).then(function (r) { toast(r && r.ok ? "removed" : "unknown job", "ok"); loadSched(); });
+      }; });
+    }).catch(function () { });
+    window.OH.rpc("schedule.list", {}).then(function (js) { window.__ohJobs = js || []; });
+  }
   function loadMemory() {
     var host = $("sec-memory");
     window.OH.rpc("memory.list", { limit: 50 }).then(function (ms) {
@@ -432,6 +468,7 @@
     document.querySelectorAll("#mNav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === name); });
     document.querySelectorAll(".msec").forEach(function (s) { s.classList.toggle("on", s.id === "sec-" + name); });
     if (name === "minions") loadMinions();
+    else if (name === "sched") loadSched();
     else if (name === "memory") loadMemory();
     else if (name === "tools") loadAsks();
     else if (name === "me") showMe();
