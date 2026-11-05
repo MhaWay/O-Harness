@@ -106,7 +106,11 @@
     det.className = "think";
     det.innerHTML = "<summary>thinking…</summary><pre class=\"tb\"></pre>";
     var first = m.node.querySelector("details.steps");
-    m.node.insertBefore(det, first ? first : m.node.querySelector(".md"));
+    if (first) m.node.insertBefore(det, first.parentNode === m.node ? first : null);
+    else {
+      var ref = m.node.querySelector(".md");
+      m.node.insertBefore(det, ref && ref.parentNode === m.node ? ref : (m.node.lastChild || null));
+    }
     m.think = det;
     return det;
   }
@@ -124,7 +128,8 @@
       det.className = "steps";
       det.open = true;
       det.innerHTML = "<summary>⚙ Ran <span class=\"n\">0</span> step</summary><div class=\"stepsbody\"></div>";
-      m.node.insertBefore(det, m.node.querySelector(".md"));
+      var ref = m.node.querySelector(".md");
+      m.node.insertBefore(det, ref && ref.parentNode === m.node ? ref : (m.node.lastChild || null));
     }
     var body = det.querySelector(".stepsbody");
     if (!body) return;
