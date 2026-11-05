@@ -184,8 +184,8 @@
       var list = rs[0] || [], ms = rs[1] || [];
       var ids = {};
       ms.forEach(function (m) { if (m.sessionId) ids[m.sessionId] = 1; });
-      var shown = list.filter(function (s) { return !ids[s.id] && (s.chat === true || s.chat === undefined || s.id === "main"); });
-      if (!shown.length) shown = list.slice(0, 3);
+      var shown = list.filter(function (s) { return !ids[s.id] && !s.archived && (s.chat === true || s.chat === undefined || s.id === "main"); });
+      if (!shown.length) shown = list.filter(function (s) { return !s.archived }).slice(0, 3);
       var html = "";
       var cur = sessId;
       shown.forEach(function (s) { html += "<option value='" + esc(s.id) + "'" + (s.id === cur ? " selected" : "") + ">" + esc(s.title) + " (" + (s.entryCount || 0) + ")</option>"; });
