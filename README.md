@@ -140,7 +140,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 47. ✅ Command palette coverage: Ctrl+K / ⌘K palette now reaches Logs and Realtime views too.
 48. ✅ Deploy reliability: `scripts/deploy.sh` polls `/health` for up to 60s via host curl (cold start ~27s) instead of a 30s budget that produced false DEPLOY-FAILs.
 49. ✅ Session export: every session can be downloaded as Markdown — a ⬇ button on each row of the Sessions view (`GET /sessions/export?session=…`, token-authenticated, 401 when anonymous), `o-h session export --id … --out file.md`, and `sessions.export` over RPC. Chat entries render as timestamped blocks, other entries as quoted metadata lines.
-50. Next: npm publish (deferred by user)
+50. ✅ Session pinning: pin/unpin any session from the Sessions view (📌/📍 toggle) or `o-h session pin|unpin --id …` (`sessions.pin` RPC, write scope). Pinned sessions sort first, persist across restarts.
+51. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
