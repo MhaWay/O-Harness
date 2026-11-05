@@ -564,6 +564,17 @@
   function showMe() {
     var id = localStorage.getItem("oh.deviceId") || "(token session)";
     $("meDevice").textContent = "device " + id + " — notes/calendar stored locally in this browser";
+    window.OH.rpc("devices.list", {}).then(function (devs) {
+      var peers = (devs || []).filter(function (d) { return String(d.id) !== String(id); });
+      $("mePeers").innerHTML = peers.length ? peers.map(function (d) {
+        return "<div class='mrow'><b>" + esc(d.name || d.id) + "</b> <span class='dim'>" + esc(d.kind || "") + "</span> <span class='dim'>" + (d.connected ? "online" : "offline") + "</span></div>";
+      }).join("") : "<div class='dim'>no other devices registered</div>";
+    }).catch(function () { $("mePeers").innerHTML = "<div class='dim'>unavailable</div>"; });
+    window.OH.rpc("pairing.list", {}).then(function (ps) {
+      $("mePairs").innerHTML = (ps || []).length ? (ps || []).map(function (p) {
+        return "<div class='mrow'><b>" + esc(p.name) + "</b> <span class='dim'>" + esc(p.kind || "") + "</span> <span class='dim'>" + (p.revokedAt ? "revoked" : ((p.scopes || []).join(",") || "active")) + "</span>" + (p.revokedAt ? "" : "<div style='margin-top:4px'><button class='ghostbtn' data-mprev='" + esc(String(p.id)) + "'>revoke pairing</button></div>") + "</div>";
+      }).join("") : "<div class='dim'>no pairings</div>";
+    }).catch(function () { $("mePairs").innerHTML = "<div class='dim'>unavailable</div>"; });
   }
 
   function boot() {
@@ -655,7 +666,11 @@
     $("mUnpairBtn").onclick = unpair;
     document.querySelectorAll("#mNav button").forEach(function (b) { b.onclick = function () { showTab(b.dataset.tab); }; });
     document.addEventListener("click", function (ev) {
-      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a],[data-grev]");
+      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a],[data-grev],[data-mprev]");
+      if (t && t.dataset.mprev) {
+        if (confirm("revoke this pairing?")) window.OH.rpc("pairing.revoke", { id: t.dataset.mprev }).then(function () { toast("pairing revoked"); showMe(); });
+        return;
+      }
       if (t && t.dataset.grev) {
         var parts = t.dataset.grev.split("|");
         window.OH.rpc("grants.revoke", { deviceId: parts[0], tool: parts[1] }).then(function () { toast("revoked"); loadAsks(); }, function (e9) { toast(String(e9), "err"); });
