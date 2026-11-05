@@ -54,13 +54,15 @@ export class SessionsStore {
   get(id: string): Session | undefined { return this.#sessions.get(id); }
 
   list(filter: { includeArchived?: boolean } = {}) {
+    const act = (s: Session): number => (s.entries.length ? (s.entries[s.entries.length - 1].ts as number) || s.createdAt : s.createdAt);
     return [...this.#sessions.values()]
       .filter((s) => filter.includeArchived || !s.archived)
-      .sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || (b.createdAt - a.createdAt))
+      .sort((a, b) => (Number(!!b.pinned) - Number(!!a.pinned)) || (act(b) - act(a)))
       .map((s) => ({
         id: s.id,
         title: s.title,
         createdAt: s.createdAt,
+        lastActiveAt: act(s),
         pinned: !!s.pinned,
         archived: !!s.archived,
         count: s.entries.length,
