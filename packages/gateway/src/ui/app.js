@@ -552,7 +552,8 @@ function showView(name) {
       '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button></div>' +
       "<table><tr><th>title</th><th>id</th><th>entries</th><th>created</th><th></th></tr>" +
       S.sessions.slice().sort(function (a, b) { return b.createdAt - a.createdAt }).map(function (s) {
-        return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button></td></tr>";
+        return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button>" +
+          (String(s.id) !== "main" ? " <button class='ghost' data-rename='" + esc(s.id) + "' title='rename'>✎</button> <button class='ghost' data-del='" + esc(s.id) + "' title='delete session'>✕</button>" : "") + "</td></tr>";
       }).join("") + "</table>";
     $("#newSessBtn").onclick = function () {
       modal("New session", '<div class="row"><input type="text" id="nsTitle" placeholder="session title" style="flex:1"></div>', async function () {
@@ -561,6 +562,31 @@ function showView(name) {
       }, "Create");
       setTimeout(function () { $("#nsTitle").focus() }, 50);
     };
+    $$("#v-sessions [data-rename]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.rename;
+        var cur = (S.sessions.filter(function (x) { return String(x.id) === id })[0] || {}).title || "";
+        modal("Rename session", '<div class="row"><input type="text" id="rnTitle" style="flex:1" value="' + esc(cur) + '"></div>', async function () {
+          var t = $("#rnTitle").value;
+          if (!t.trim()) return;
+          await rpc("sessions.rename", { id: id, title: t });
+          toast("session renamed", "ok");
+          await loadSessionsCount(); if (S.view === "sessions") loadSessions();
+        }, "Rename");
+        setTimeout(function () { var el = $("#rnTitle"); el.select(); el.focus(); }, 50);
+      };
+    });
+    $$("#v-sessions [data-del]").forEach(function (b) {
+      b.onclick = function () {
+        var id = b.dataset.del;
+        var s = S.sessions.filter(function (x) { return String(x.id) === id })[0] || {};
+        modal("Delete session?", "<div>\"" + esc(s.title || id) + "\" (" + (s.entryCount || 0) + " entries) will be removed. This is not recoverable except from daily backups.</div>", async function () {
+          var r = await rpc("sessions.delete", { id: id });
+          if (r && r.ok) { toast("deleted session " + String(id).slice(0, 8), "ok"); if (S.session === id) { S.session = "main"; } await loadSessionsCount(); loadSessions(); }
+          else toast("delete refused (main is protected)", "err");
+        }, "Delete");
+      };
+    });
   }
   async function loadMinions() {
     var host = $("#v-minions");

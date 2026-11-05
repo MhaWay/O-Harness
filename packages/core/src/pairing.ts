@@ -135,6 +135,8 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "grants.list": "read",
   "grants.revoke": "admin",
   "sessions.append": "write",
+  "sessions.delete": "write",
+  "sessions.rename": "write",
   "chat.send": "write",
   "chat.history": "read",
   "schedule.create": "write",

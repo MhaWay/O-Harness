@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { atomicWrite } from "./jsonfile.ts";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -69,5 +69,23 @@ export class SessionsStore {
     s.entries.push(entry);
     this.#persist(id);
     return entry;
+  }
+
+  /** Remove a session and its file. The id "main" is refused — it is the chat default. */
+  remove(id: string): boolean {
+    if (id === "main" || !this.#sessions.has(id)) return false;
+    this.#sessions.delete(id);
+    try { rmSync(this.#path(id)); } catch { /* already gone */ }
+    return true;
+  }
+
+  /** Rename a session; empty title keeps the current one. Returns false if unknown. */
+  rename(id: string, title: string): boolean {
+    const s = this.#sessions.get(id);
+    if (!s) return false;
+    const t = String(title ?? "").trim().slice(0, 80);
+    if (t) s.title = t;
+    this.#persist(id);
+    return true;
   }
 }

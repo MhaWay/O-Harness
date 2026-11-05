@@ -631,7 +631,18 @@ export async function main(args: string[]): Promise<void> {
       console.log(JSON.stringify(e));
       return;
     }
-    throw new Error("usage: o-h session show|create|append [--id <id>] [--title t] [--kind k] [text]");
+    if (sub === "rename") {
+      const title = withoutFlag(rest.slice(1), "id").join(" ") || flag(args, "title") || "";
+      const o = await callOnce("sessions.rename", { id, title }, port) as { ok: boolean };
+      console.log(o.ok ? "renamed " + id : "unknown session: " + id);
+      return;
+    }
+    if (sub === "delete") {
+      const o = await callOnce("sessions.delete", { id }, port) as { ok: boolean };
+      console.log(o.ok ? "deleted " + id : "refused or unknown: " + id + (id === "main" ? " (main is protected)" : ""));
+      return;
+    }
+    throw new Error("usage: o-h session show|create|append|rename|delete [--id <id>] [--title t] [--kind k] [text]");
   }
 
   throw new Error("unknown command: " + cmd + "\ncommands: gateway start | token | devices | exec | read | write | sessions | session | node connect [--device-id id]");

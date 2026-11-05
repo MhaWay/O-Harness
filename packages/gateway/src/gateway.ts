@@ -262,6 +262,19 @@ export class Gateway {
       this.#broadcastEvent("sessions.changed", { sessionId: String(p?.id), entry });
       return entry;
     });
+    this.rpc.set(Methods.SessionsDelete, (p) => {
+      const id = String(p?.id ?? "");
+      if (!id) throw new Error("sessions.delete: id required");
+      const ok = this.sessions.remove(id);
+      if (ok) { this.#broadcastEvent("sessions.changed", { sessionId: id, deleted: true }); this.audit.note("sessions.delete", { actor: "client", sessionId: id }); }
+      return { ok };
+    });
+    this.rpc.set(Methods.SessionsRename, (p) => {
+      const id = String(p?.id ?? "");
+      const ok = this.sessions.rename(id, typeof p?.title === "string" ? p.title : "");
+      if (ok) this.#broadcastEvent("sessions.changed", { sessionId: id });
+      return { ok };
+    });
     if (!this.sessions.get("main")) this.sessions.create("main", "main");
 
     // memory: ADD-only store, bitemporal, hybrid retrieval (see packages/core/src/memory.ts)

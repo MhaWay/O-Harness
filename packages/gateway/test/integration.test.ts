@@ -46,6 +46,13 @@ describe("integration: sessions/memory/pairing/tools/logs/doctor/backup", () => 
     const got = await rpc(adminUrl(), "sessions.get", { id: s.id }) as { entries: { kind: string }[] };
     assert.equal(got.entries.length, 1);
     assert.equal(got.entries[0].kind, "chat");
+    // sessions.rename + sessions.delete (slice 42)
+    assert.deepEqual(await rpc(adminUrl(), "sessions.rename", { id: s.id, title: "renamed" }), { ok: true });
+    assert.equal((await rpc(adminUrl(), "sessions.get", { id: s.id }) as { title: string }).title, "renamed");
+    assert.deepEqual(await rpc(adminUrl(), "sessions.delete", { id: s.id }), { ok: true });
+    assert.equal(await rpc(adminUrl(), "sessions.get", { id: s.id }), null);
+    const mainDel = await rpc(adminUrl(), "sessions.delete", { id: "main" }) as { ok: boolean };
+    assert.equal(mainDel.ok, false, "main protected");
 
     // memory
     await rpc(adminUrl(), "memory.add", { text: "user likes dark GUI themes", subject: "user" });
