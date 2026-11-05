@@ -151,7 +151,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 58. ✅ Session archive: soft-hide sessions from the list without deleting (`sessions.archive`, write scope)—an 🗃 button per row; dimmed rows with an “archived” tag when the archived filter is on. Archived sessions stay out of chat/session dropdowns but remain readable, openable and searchable. CLI: `o-h session archive|unarchive --id X`, `sessions list --archived`. Slash commands `/archive` and `/unarchive` work in the chat box too.
 59. ✅ Last-activity ordering: sessions sort by the timestamp of their most recent entry (`lastActiveAt`), so a quiet day no longer leaves an old chat at the top; the Sessions table column is now *last active*.
 60. ✅ Mobile parity for session tools: the mobile client carries quick pin and rename buttons for the current session, and resolves the target through a live sessions.list so actions never hit a stale cached row.
-61. Next: npm publish (deferred by user)
+61. ✅ Mobile loop transparency: the `/m` chat shows live per-step tool badges (`⚙ Ran N steps` with exec commands / file paths) and a collapsible *thinking…* panel while streaming, and rebuilds both from history after reload — parity with the desktop view.
+62. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
