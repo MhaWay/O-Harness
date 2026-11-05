@@ -152,7 +152,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 59. ✅ Last-activity ordering: sessions sort by the timestamp of their most recent entry (`lastActiveAt`), so a quiet day no longer leaves an old chat at the top; the Sessions table column is now *last active*.
 60. ✅ Mobile parity for session tools: the mobile client carries quick pin and rename buttons for the current session, and resolves the target through a live sessions.list so actions never hit a stale cached row.
 61. ✅ Mobile loop transparency: the `/m` chat shows live per-step tool badges (`⚙ Ran N steps` with exec commands / file paths) and a collapsible *thinking…* panel while streaming, and rebuilds both from history after reload — parity with the desktop view.
-62. Next: npm publish (deferred by user)
+62. ✅ Mobile parity for long chats and cleanup: the `/m` client pages chat history ("load earlier messages", same 60-entry window as desktop, scroll position preserved) and carries a delete-session button next to pin/rename (with confirm; `main` protected).
+63. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
