@@ -145,7 +145,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 52. ✅ Chat history recall: press ArrowUp in the chat box to cycle through your previous messages (newest first, 200 messages deep, loaded from the current session); ArrowDown walks forward; your in-progress draft is preserved and restored when you return to the newest. Works like shell history.
 53. ✅ Slash commands in chat: type `/` in the chat box for an autocomplete menu (Tab/Enter to complete, Enter to execute when complete). Built-ins: `/help`, `/new` (new session), `/rename <title>`, `/thinking none|low|medium|xhigh`, `/models`, `/memory <query>`, `/export`, `/pin`, `/stop`.
 54. ✅ Offline banner: when the websocket link to the gateway drops (network hiccup, gateway restart, laptop sleep), a red bar appears with the seconds of downtime; it clears automatically the moment the link is back, and a browser `online` event triggers an immediate reconnect attempt.
-55. Next: npm publish (deferred by user)
+55. ✅ Copy button on every assistant answer (bubble meta + streamed-finished answers), with clipboard fallback over plain http.
+56. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
