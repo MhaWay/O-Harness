@@ -277,6 +277,8 @@ function showView(name) {
     ["memory <q>", "search durable memory"],
     ["export", "download session markdown"],
     ["pin", "pin this session"],
+    ["archive", "hide this session from the list"],
+    ["unarchive", "restore an archived session"],
     ["stop", "stop generation"]
   ];
   var slashEls = { menu: null };
@@ -319,6 +321,15 @@ function showView(name) {
     if (cmd === "memory") { if (!arg) { slashInfo("usage: /memory &lt;query&gt;"); return true } var hits = (await rpc("memory.search", { query: arg, limit: 8 })) || []; var out = hits.map(function (h) { var t = (h.memory && h.memory.text) || h.text || ""; return "· " + esc(String(t).slice(0, 160)) }).join("<br>"); slashInfo(hits.length ? out : "no memory matches <i>" + esc(arg) + "</i>"); return true }
     if (cmd === "export") { var a = document.createElement("a"); a.href = "/sessions/export?session=" + encodeURIComponent(S.session) + "&token=" + encodeURIComponent(window.OH.getToken()); a.download = S.session + ".md"; document.body.appendChild(a); a.click(); a.remove(); slashInfo("downloading " + esc(String(S.session)) + ".md"); return true }
     if (cmd === "pin") { var cur = ((S.sessions.filter(function (x) { return x.id === S.session })[0] || {})).pinned; await rpc("sessions.pin", { id: S.session, pinned: !cur }); await loadSessionsCount(); slashInfo(cur ? "unpinned" : "pinned session"); return true }
+    if (cmd === "archive" || cmd === "unarchive") {
+      var on = cmd === "archive";
+      var o = await rpc("sessions.archive", { id: S.session, archived: on });
+      if (!o || !o.ok) { slashInfo("unknown session"); return true }
+      await loadSessionsCount();
+      slashInfo(on ? "session archived — open it again from the Sessions view with the archived filter on, or run <b>/unarchive</b>" : "session restored");
+      if (on) await openChat(S.session);
+      return true
+    }
     if (cmd === "stop") { stopChat(); slashInfo("stop requested"); return true }
     return false
   }
