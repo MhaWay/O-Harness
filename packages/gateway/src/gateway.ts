@@ -309,6 +309,13 @@ export class Gateway {
       this.#broadcastEvent("memory.added", { id: m.id, subject: m.subject });
       return m;
     });
+    this.rpc.set(Methods.MemoryForget, (p) => {
+      const id = String(p?.id ?? "");
+      if (!id) throw new Error("memory.forget: id required");
+      const ok = this.memory.forget(id);
+      if (ok) { this.audit.note("memory.forget", { actor: "client", memoryId: id }); this.#broadcastEvent("memory.added", { id, forgotten: true }); }
+      return { ok };
+    });
     this.rpc.set(Methods.MemorySearch, (p) => this.memory.search({
       query: p?.query ? String(p.query) : undefined,
       subject: p?.subject ? String(p.subject) : undefined,

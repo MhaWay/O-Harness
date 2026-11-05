@@ -102,7 +102,24 @@ test("grants: grant, check, touch, revoke, persistence", () => {
 
 test("SCOPE_FOR_METHOD maps known methods", () => {
   assert.equal(SCOPE_FOR_METHOD["memory.add"], "write");
+  assert.equal(SCOPE_FOR_METHOD["memory.forget"], "write");
   assert.equal(SCOPE_FOR_METHOD["settings.get"], "read");
   assert.equal(SCOPE_FOR_METHOD["device.exec"], "admin");
   assert.equal(SCOPE_FOR_METHOD["pairing.create"], "admin");
+});
+
+test("memory: forget — vanishes from now-reads, kept for history", () => {
+  const dir = tmp();
+  const ms = new MemoryStore(dir);
+  const m = ms.add({ subject: "user:y", text: "temporary fact about the user", layer: "knowledge" });
+  assert.ok(ms.search({ query: "temporary fact" }).length >= 1);
+  assert.equal(ms.forget(m.id), true);
+  assert.equal(ms.forget(m.id), true); // idempotent
+  assert.equal(ms.forget("nope-nope"), false);
+  assert.equal(ms.search({ query: "temporary fact" }).length, 0); // gone from now
+  assert.equal(ms.list().some((x) => x.id === m.id), false);
+  const hist = ms.list({ validity: "history" });
+  assert.ok(hist.some((x) => x.id === m.id && x.validUntil !== undefined && x.tags.includes("forgotten"))); // ADD-only: still on disk
+  const re = new MemoryStore(dir);
+  assert.ok(re.list({ validity: "history" }).some((x) => x.id === m.id)); // persisted
 });

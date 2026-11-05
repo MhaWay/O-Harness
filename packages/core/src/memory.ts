@@ -144,6 +144,17 @@ export class MemoryStore {
 
   get(id: string): Memory | undefined { return this.#mems.get(id); }
 
+  /** Soft-forget: stamps validUntil=now + "forgotten" tag. Records stay on disk (ADD-only rule)
+   * and remain readable with validity:"history"; they vanish from "now" reads immediately. */
+  forget(id: string): boolean {
+    const m = this.#mems.get(id);
+    if (!m) return false;
+    m.validUntil = Date.now();
+    if (!m.tags.includes("forgotten")) m.tags.push("forgotten");
+    this.#persist(m);
+    return true;
+  }
+
   list(filter: { subject?: string; layer?: string; validity?: "now" | "history" } = {}): Memory[] {
     const now = Date.now();
     const hist = filter.validity === "history";

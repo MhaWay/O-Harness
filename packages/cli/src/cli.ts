@@ -252,8 +252,16 @@ export async function main(args: string[]): Promise<void> {
       const limit = flag(args, "limit"); if (limit) params.limit = Number(limit);
       const hits = await callOnce<any[]>("memory.search", params, port);
       if (!hits.length) console.log("(no hits)");
-      for (const h of hits) console.log(h.score.toFixed(3) + " [" + h.subject + "/" + h.layer + "] " + h.text);
+      for (const h of hits) { const m = h.memory ?? h; console.log(h.score.toFixed(3) + " [" + m.subject + "/" + m.layer + "] " + m.text); }
       return;
+    }
+    if (sub === "forget") {
+      const id = rest[1];
+      if (!id) throw new Error("usage: o-h memory forget <id>");
+      const r = await callOnce<{ ok: boolean }>("memory.forget", { id }, port);
+      console.log(r.ok ? "forgotten " + id + " (kept for history)" : "unknown id " + id);
+      return;
+    }
     }
     if (sub === "list") {
       const subject = flag(args, "subject");

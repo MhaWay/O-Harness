@@ -23,8 +23,17 @@
     try { ok = document.execCommand("copy") } catch (err) { ok = false }
     ta.remove(); return ok;
   }
-  document.addEventListener("click", function (e) {
-    var b = e.target && e.target.closest ? e.target.closest(".cpbtn") : null;
+  document.addEventListener("click", function (ev) {
+    var fb = ev.target && ev.target.closest ? ev.target.closest(".memforget") : null;
+    if (fb) {
+      var mid = fb.dataset.mid;
+      rpc("memory.forget", { id: mid }).then(function (r) {
+        if (r && r.ok) { toast("memory forgotten (kept for history)"); if (S.view === "memory") doMemorySearch() }
+        else toast("unknown memory id", "err")
+      }).catch(function (err) { toast(String(err), "err") });
+      return;
+    }
+    var b = ev.target && ev.target.closest ? ev.target.closest(".cpbtn") : null;
     if (!b) return;
     var pre = b.closest("pre"); if (!pre) return;
     var code = pre.querySelector("code"); if (!code) return;
@@ -868,7 +877,8 @@ function showView(name) {
       hits.map(function (h) {
         var m = h.memory || h;
         var state = m.supersededBy ? "<span class='tag err'>superseded</span>" : (m.validUntil ? "<span class='tag'>expired</span>" : "");
-        return "<tr><td class='dim'>" + fmtDT(m.createdAt) + "</td><td>" + esc(m.subject) + "</td><td>" + esc(m.text) + "</td><td>" + (m.tags || []).map(function (t) { return "<span class='tag'>" + esc(t) + "</span>" }).join("") + "</td><td>" + (h.score != null ? String(Math.round(h.score * 100)) + "%" : "-") + "</td><td>" + state + "</td></tr>";
+        var forget = m.supersededBy ? "" : "<button class='ghost memforget' data-mid='" + esc(m.id) + "' title='forget this memory (kept for history)' style='font-size:11px;padding:1px 7px'>forget</button>";
+        return "<tr><td class='dim'>" + fmtDT(m.createdAt) + "</td><td>" + esc(m.subject) + "</td><td>" + esc(m.text) + "</td><td>" + (m.tags || []).map(function (t) { return "<span class='tag'>" + esc(t) + "</span>" }).join("") + "</td><td>" + (h.score != null ? String(Math.round(h.score * 100)) + "%" : "-") + "</td><td>" + state + forget + "</td></tr>";
       }).join("") + "</table>";
   }
   async function loadTools() {
