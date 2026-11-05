@@ -147,7 +147,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 54. ✅ Offline banner: when the websocket link to the gateway drops (network hiccup, gateway restart, laptop sleep), a red bar appears with the seconds of downtime; it clears automatically the moment the link is back, and a browser `online` event triggers an immediate reconnect attempt.
 55. ✅ Copy button on every assistant answer (bubble meta + streamed-finished answers), with clipboard fallback over plain http.
 56. ✅ Copy button on mobile assistant bubbles (/m, parity with desktop).
-57. Next: npm publish (deferred by user)
+57. ✅ Memory forget: soft-delete of a memory (`memory.forget`, write scope) — the record vanishes from live search/list at once but stays readable with `validity:"history"`, honoring the ADD-only rule. Forget button per row in the Memory view, `o-h memory forget <id>` in the CLI.
+58. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.

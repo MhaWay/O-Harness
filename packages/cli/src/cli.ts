@@ -262,7 +262,6 @@ export async function main(args: string[]): Promise<void> {
       console.log(r.ok ? "forgotten " + id + " (kept for history)" : "unknown id " + id);
       return;
     }
-    }
     if (sub === "list") {
       const subject = flag(args, "subject");
       const validity = flag(args, "validity");
