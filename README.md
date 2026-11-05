@@ -136,7 +136,10 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 43. ✅ Chat markdown upgrade: triple-backtick fences render as proper code blocks with a copy button (works on plain http via an execCommand fallback), and pipe-style tables render as real `<table>`s with header row — plus a fix so a fenced block can no longer get swallowed into a preceding paragraph.
 44. ✅ Stop generation: the send button turns into a red ■ stop button while the model is streaming — pressing it (or `o-h chat stop [--session S]`, or `chat.abort` via RPC) aborts the run mid-stream; everything generated so far is kept (partial answer persisted with the chat entry), the loop also breaks between tool calls, and a new message in the same session supersedes the previous run.
 45. ✅ Regenerate: every assistant answer has an “again” button (GUI + mobile) — it drops the last answer (and any tool steps after the last user message) and re-runs the turn, reusing the same streaming UI and respecting stop/abort. `o-h chat regen [--session S] [--effort E]` does the same from the CLI, and `chat.regenerate` is the RPC (write scope).
-46. Next: npm publish (deferred by user)
+46. ✅ Session search: `o-h sessions search <text> [--kind chat]` and a search box in the Sessions view — case-insensitive full-text search across titles and entry text of every session, results newest-match first with snippets and one-click *open* into the chat view (`sessions.search` RPC, read scope).
+47. ✅ Command palette coverage: Ctrl+K / ⌘K palette now reaches Logs and Realtime views too.
+48. ✅ Deploy reliability: `scripts/deploy.sh` polls `/health` for up to 60s via host curl (cold start ~27s) instead of a 30s budget that produced false DEPLOY-FAILs.
+49. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
