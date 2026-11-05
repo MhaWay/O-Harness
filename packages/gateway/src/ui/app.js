@@ -647,6 +647,7 @@ function showView(name) {
     var prov = (st.providers || []).filter(function (p) { return p.id === def.providerId })[0];
     el.textContent = (def.modelId ? String(def.modelId) : "no model") + (def.effort && def.effort !== "none" ? " \u00b7 thinking: " + def.effort : "");
     el.title = (prov ? (prov.name || prov.id) + " / " : "") + "click Settings to change";
+    var es = $("#effortSel"); if (es && st.default) es.value = ["none", "low", "medium", "xhigh"].indexOf(def.effort) >= 0 ? def.effort : "none";
   }
   function renderStatusFoot() {
     var el = $("#statusFoot"); if (!el) return;
@@ -1152,6 +1153,7 @@ function showView(name) {
       fillModel($("#defModel"), names, def.modelId || (names.length ? names[0] : ""));
     }
     defModels();
+    var defE = $("#defEffort"); if (defE) defE.value = ["none", "low", "medium", "xhigh"].indexOf(def.effort) >= 0 ? def.effort : "none";
     defProv.onchange = function () { def.modelId = null; defModels() };
     $("#addProv").onclick = function () {
       var id = prompt("provider id (lowercase, unique)", "my-provider"); if (!id) return;
