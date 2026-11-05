@@ -522,6 +522,34 @@
       var t = prompt("session title", s.title || "");
       if (t && t.trim()) { try { await window.OH.rpc("sessions.rename", { id: s.id, title: t.trim() }); toast("renamed", "ok"); loadSessions(); } catch (e) { toast(String(e)); } }
     };
+    function showSearchBox(on) {
+      var box = $("mSearchBox"); if (!box) return;
+      box.style.display = on ? "flex" : "none";
+      if (on) { $("mQ").focus(); } else { $("mHits").innerHTML = ""; }
+    }
+    function runSearch() {
+      var q = $("mQ").value.trim();
+      if (!q) { $("mHits").innerHTML = ""; return; }
+      window.OH.rpc("sessions.search", { q: q, limit: 20 }).then(function (hits) {
+        var h = "";
+        (hits || []).forEach(function (x) {
+          h += "<div class='mrow'><b>" + esc(x.title) + "</b> <span class='dim'>" + x.hits + " hits · seq " + x.matchSeq + "</span><br>"
+            + "<span class='dim'>" + esc(x.snippet.slice(0, 90)) + (x.snippet.length > 90 ? "…" : "") + "</span>"
+            + "<div style='margin-top:4px'><button class='ghostbtn' data-hit='" + esc(x.id) + "'>open</button></div></div>";
+        });
+        $("mHits").innerHTML = h || "<div class='dim' style='padding:6px 2px'>no hits for “" + esc(q) + "”</div>";
+        document.querySelectorAll("#mHits [data-hit]").forEach(function (b) {
+          b.onclick = function () {
+            sessId = b.dataset.hit; localStorage.setItem("oh.msess", sessId);
+            showSearchBox(false); loadSessions(); loadChat();
+          };
+        });
+      }).catch(function (e) { toast(String(e), "err"); });
+    }
+    $("mSrBtn").onclick = function () { showSearchBox($("mSearchBox").style.display !== "flex"); };
+    $("mQGo").onclick = runSearch;
+    $("mQX").onclick = function () { showSearchBox(false); };
+    $("mQ").addEventListener("keydown", function (ev) { if (ev.key === "Enter") runSearch(); });
     $("mDelBtn").onclick = async function () {
       var s = await liveSession();
       if (!s) { toast("open a chat first"); return; }

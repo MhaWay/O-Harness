@@ -43,8 +43,13 @@ body { background: #0d1117; }
     <section class="msec on" id="sec-chat">
       <div style="display:flex;gap:6px;margin-bottom:10px">
         <select id="mSessions" style="flex:1"></select>
-        <button id="mNewBtn" class="ghostbtn">+ New</button><button id="mPinBtn" class="ghostbtn" title="pin" style="margin-left:6px">📌</button><button id="mRenBtn" class="ghostbtn" title="rename" style="margin-left:4px">✎</button><button id="mDelBtn" class="ghostbtn" title="delete session" style="margin-left:4px"></button>
+        <button id="mNewBtn" class="ghostbtn">+ New</button><button id="mPinBtn" class="ghostbtn" title="pin" style="margin-left:6px">📌</button><button id="mRenBtn" class="ghostbtn" title="rename" style="margin-left:4px">✎</button><button id="mDelBtn" class="ghostbtn" title="delete session" style="margin-left:4px"></button><button id="mSrBtn" class="ghostbtn" title="search chats" style="margin-left:4px">🔍</button>
       </div>
+      <div id="mSearchBox" style="display:none;gap:6px;margin-bottom:8px">
+        <input id="mQ" placeholder="search chats…" style="flex:1">
+        <button id="mQGo" class="ghostbtn">go</button><button id="mQX" class="ghostbtn">✕</button>
+      </div>
+      <div id="mHits"></div>
       <div id="chatLog" style="min-height:50vh"></div>
       <div class="composer" style="margin-top:10px;position:sticky;bottom:58px">
         <textarea id="mInput" rows="1" placeholder="Message…"></textarea>
