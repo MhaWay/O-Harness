@@ -94,6 +94,54 @@
     log.scrollTop = log.scrollHeight;
     return b;
   }
+  function streamMain(m) {
+    if (!m || !m.node.isConnected) return;
+    var md = m.node.querySelector(".md");
+    if (md) md.textContent = m.buf; else m.node.textContent = m.buf;
+  }
+  function ensureThink(m) {
+    if (m.think && m.think.isConnected) return m.think;
+    if (!m.node.isConnected) return null;
+    var det = document.createElement("details");
+    det.className = "think";
+    det.innerHTML = "<summary>thinking…</summary><pre class=\"tb\"></pre>";
+    var first = m.node.querySelector("details.steps");
+    m.node.insertBefore(det, first ? first : m.node.querySelector(".md"));
+    m.think = det;
+    return det;
+  }
+  function stepLabel(st) {
+    var a = st.args || {};
+    if (st.tool === "exec" && a.command) { var c = String(a.command).split("\n")[0]; return c.length > 80 ? c.slice(0, 80) + "…" : c }
+    if ((st.tool === "read_file" || st.tool === "write_file") && a.path) return st.tool + " " + String(a.path);
+    return st.tool + " " + JSON.stringify(a).slice(0, 60);
+  }
+  function toolEvent(m, d) {
+    if (!m || !m.node.isConnected) return;
+    var det = m.node.querySelector("details.steps");
+    if (!det) {
+      det = document.createElement("details");
+      det.className = "steps";
+      det.open = true;
+      det.innerHTML = "<summary>⚙ Ran <span class=\"n\">0</span> step</summary><div class=\"stepsbody\"></div>";
+      m.node.insertBefore(det, m.node.querySelector(".md"));
+    }
+    var body = det.querySelector(".stepsbody");
+    if (!body) return;
+    var sig = d.tool + "|" + JSON.stringify(d.args || {});
+    var rows = body.querySelectorAll(".stepline"); var line = null;
+    for (var i = 0; i < rows.length; i++) { if (rows[i].dataset.sig === sig) { line = rows[i]; break } }
+    if (d.status === "running") {
+      if (!line) { line = document.createElement("div"); line.className = "stepline run"; line.dataset.sig = sig; body.appendChild(line) }
+      line.textContent = String.fromCharCode(9892) + " " + stepLabel(d);
+      line.title = JSON.stringify(d.args || {});
+    } else {
+      if (!line) { line = document.createElement("div"); line.className = "stepline"; line.dataset.sig = sig; body.appendChild(line) }
+      line.className = "stepline"; line.textContent = stepLabel(d);
+      line.title = (JSON.stringify(d.args || {}) + " -> " + String(d.result || "").slice(0, 300));
+      var c = det.querySelector("summary .n"); if (c) c.textContent = String(body.querySelectorAll(".stepline").length);
+    }
+  }
   function stopChat() {
     window.OH.rpc("chat.abort", { sessionId: sessId }).then(function (r) { toast(r && r.ok ? "stopping…" : "not running"); }).catch(function (e) { toast(String(e)); });
   }
@@ -105,13 +153,13 @@
     busy = true; inp.value = ""; autosize(inp);
     bubble("user", esc(text));
     streamingMsg = null;
-    var b = bubble("assistant", "<span class='dim'>…</span>");
-    streamingMsg = { node: b, buf: "" };
+    var b = bubble("assistant", "<div class='md'>…</div>");
+    streamingMsg = { node: b, buf: "", rbuf: "", think: null };
     var sb = $("mSendBtn"); if (sb) { sb.textContent = "Stop"; sb.title = "stop generation"; }
     window.OH.rpc("chat.send", { sessionId: sessId, message: text }).then(function (r) {
       streamingMsg = null;
       var t = r && r.text ? r.text : "";
-      b.innerHTML = esc(t);
+      var md = b.querySelector(".md"); if (md) md.textContent = t; else b.innerHTML = esc(t);
       if (autoSpeak && t) speak(t);
     }).catch(function (e) {
       streamingMsg = null;
@@ -239,8 +287,8 @@
     streamingMsg = null;
     var asists = document.querySelectorAll("#chatLog .bubble.assistant");
     if (asists.length) asists[asists.length - 1].remove(); // dropped server-side; drop it here too
-    var b = bubble("assistant", "<span class='dim'>…</span>");
-    streamingMsg = { node: b, buf: "" };
+    var b = bubble("assistant", "<div class='md'>…</div>");
+    streamingMsg = { node: b, buf: "", rbuf: "", think: null };
     window.OH.rpc("chat.regenerate", { sessionId: sessId }).then(function (r) {
       streamingMsg = null;
       b.innerHTML = esc((r && r.ok) ? (r.text || "") : ((r && r.reason) || "nothing to regenerate"));
