@@ -465,6 +465,21 @@ function showView(name) {
   async function loadSessionsCount() {
     try { S.sessions = await rpc("sessions.list", {}) || [] } catch (e) { return }
     renderMiniSessions();
+    renderStatusFoot();
+  }
+  function renderModelPill() {
+    var el = $("#modelPill"); if (!el) return;
+    var st = S.settings || {}; var def = st.default || {};
+    var prov = (st.providers || []).filter(function (p) { return p.id === def.providerId })[0];
+    el.textContent = (def.modelId ? String(def.modelId) : "no model") + (def.effort && def.effort !== "none" ? " \u00b7 thinking: " + def.effort : "");
+    el.title = (prov ? (prov.name || prov.id) + " / " : "") + "click Settings to change";
+  }
+  function renderStatusFoot() {
+    var el = $("#statusFoot"); if (!el) return;
+    var n = (S.sessions || []).length;
+    fetch("/health").then(function (r) { return r.json() }).then(function (h) {
+      el.textContent = "protocol " + (h.protocol ?? "?") + " \u00b7 " + n + " session" + (n === 1 ? "" : "s") + " \u00b7 pid " + h.pid + (h.others ? " \u00b7 \u26a0 " + h.others + " other instance" : "");
+    }).catch(function () { el.textContent = n + " session" + (n === 1 ? "" : "s"); });
   }
   async function loadOverview() {
     var host = $("#v-overview");
@@ -832,6 +847,7 @@ function showView(name) {
   }
   async function loadSettings() {
     var st = S.settings = await rpc("settings.get", {});
+    renderModelPill();
     var def = st.default || {};
     var byId = {}; (st.providers || []).forEach(function (p) { byId[p.id] = p });
     var rows = (st.providers || []).map(function (p, i) {
@@ -951,7 +967,7 @@ function showView(name) {
     }
     $("#saveProv").onclick = async function () {
       collect();
-      try { await rpc("settings.save", { settings: S.settings }); $("#setOut").textContent = "saved " + fmtT(Date.now()); toast("settings saved", "ok") } catch (e) { toast(String(e), "err") }
+      try { await rpc("settings.save", { settings: S.settings }); S.settings = await rpc("settings.get", {}); renderModelPill(); $("#setOut").textContent = "saved " + fmtT(Date.now()); toast("settings saved", "ok") } catch (e) { toast(String(e), "err") }
     };
     $("#checkUp").onclick = async function () {
       $("#upOut").textContent = "checking...";
@@ -1087,6 +1103,7 @@ function showView(name) {
           }
         }
       } else if (topic === "sessions.changed") loadSessionsCount();
+      else if (topic === "settings.changed") { rpc("settings.get", {}).then(function (st) { S.settings = st; renderModelPill(); if (S.view === "settings") loadSettings() }).catch(function () { }) }
       else if (topic === "chat.tool") {
         if (S.streaming && data && data.sessionId === S.session) {
           var tb = S.streaming.parentElement;
@@ -1119,6 +1136,7 @@ function showView(name) {
       $("#tokenGate").classList.add("hidden");
       $("#app").classList.remove("hidden");
       if (!S.settings) { try { S.settings = await rpc("settings.get", {}) } catch (e) { } }
+      renderModelPill();
       await loadSessionsCount();
       if (!S.loaded) { S.loaded = true; await openChat(S.session); showView("chat") }
     };

@@ -354,10 +354,18 @@ export class Gateway {
       return { ...s, providers: s.providers.map((p) => ({ ...p, apiKey: p.apiKey ? "***set***" : undefined })) };
     });
     this.rpc.set(Methods.SettingsSave, (p) => {
+      // quick path: change only the default model / thinking effort (GUI pill dropdown)
+      if (p && (p.modelId || p.effort !== undefined)) {
+        const cur = this.settings.get();
+        const curDef = cur.default ?? { providerId: "", modelId: "" };
+        cur.default = { ...curDef, modelId: String(p.modelId ?? curDef.modelId), effort: (p.effort as Effort | undefined) ?? curDef.effort };
+        this.settings.save(cur);
+        this.#broadcastEvent("settings.changed", { default: cur.default });
+        return { ok: true, default: cur.default };
+      }
       const incoming = p?.settings as Settings | undefined;
       if (!incoming || !Array.isArray(incoming.providers)) throw new Error("settings.save: {settings:{providers:[...]}} required");
       const cur = this.settings.get();
-      // merge: incoming may have "***set***" masked keys — keep existing real keys
       const byId = new Map(cur.providers.map((x) => [x.id, x]));
       incoming.providers = incoming.providers.map((inc) => {
         const old = byId.get(inc.id);
