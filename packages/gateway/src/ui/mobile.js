@@ -383,6 +383,13 @@
     if (!host) return;
     window.OH.rpc("schedule.list", {}).then(function (js) {
       var html = "<div class='card'><h3>Scheduled jobs</h3>";
+      html += "<div style='margin:4px 0 8px'><button id='mJobNew' class='ghostbtn'>+ new job</button></div>";
+      html += "<div id='mJobForm' style='display:none;margin:0 0 10px'>"
+        + "<input id='mJobLabel' placeholder='label' style='width:100%'>"
+        + "<textarea id='mJobMsg' placeholder='message (kind chat)' style='width:100%;margin-top:6px'></textarea>"
+        + "<div style='margin-top:6px;display:flex;gap:6px'><select id='mJobCad' style='flex:1'><option value='every'>every…</option><option value='daily'>daily</option><option value='once'>once at</option></select>"
+        + "<input id='mJobVal' placeholder='minutes' style='width:90px'></div>"
+        + "<div style='margin-top:6px'><button id='mJobGo' class='primary'>create</button></div></div>";
       if (!(js || []).length) html += "<div class='dim'>none yet</div>";
       (js || []).forEach(function (j) {
         html += "<div class='mrow' style='" + (j.disabled ? "opacity:.5" : "") + "'>"
@@ -396,6 +403,42 @@
       });
       html += "</div>";
       host.innerHTML = html;
+      var newBtn = $("mJobNew");
+      if (newBtn) newBtn.onclick = function () {
+        var f = $("mJobForm"); if (!f) return;
+        f.style.display = f.style.display === "none" ? "block" : "none";
+      };
+      var cadSel = $("mJobCad");
+      if (cadSel) cadSel.onchange = function () {
+        var v = $("mJobVal");
+        v.placeholder = cadSel.value === "every" ? "minutes" : (cadSel.value === "daily" ? "HH:MM" : "YYYY-MM-DD HH:MM");
+      };
+      var go = $("mJobGo");
+      if (go) go.onclick = function () {
+        var label = $("mJobLabel").value.trim();
+        var message = $("mJobMsg").value.trim();
+        if (!label || !message) { toast("label + message required", "err"); return; }
+        var cadType = cadSel ? cadSel.value : "every";
+        var raw = $("mJobVal").value.trim();
+        var cadence = null;
+        try {
+          if (cadType === "every") {
+            var mins = Math.max(1, Math.round(Number(raw) || 60));
+            cadence = { type: "every", minutes: mins };
+          } else if (cadType === "daily") {
+            if (!/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(raw)) throw new Error("bad time");
+            cadence = { type: "daily", time: raw };
+          } else {
+            var at = Date.parse(raw.replace(" ", "T"));
+            if (!at) throw new Error("bad date");
+            cadence = { type: "once", at: new Date(at).toISOString() };
+          }
+        } catch (err) { toast("cadence: " + String(err.message || err), "err"); return; }
+        window.OH.rpc("schedule.create", { label: label, message: message, cadence: cadence }).then(function (r) {
+          toast(r && r.id ? "job created" : "error", r && r.id ? "ok" : "err");
+          loadSched();
+        }).catch(function (er) { toast(String(er), "err"); });
+      };
       host.querySelectorAll("[data-srun]").forEach(function (b) { b.onclick = function () { window.OH.rpc("schedule.runNow", { id: b.dataset.srun }).then(function (r) { toast(r && r.ok ? "ran" : "unknown job", r && r.ok ? "ok" : "err"); loadSched(); }); }; });
       host.querySelectorAll("[data-sdis]").forEach(function (b) { b.onclick = function () {
         var cur = (window.__ohJobs || []).filter(function (x) { return x.id === b.dataset.sdis })[0];
