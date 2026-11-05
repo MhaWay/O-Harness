@@ -156,7 +156,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 63. ✅ Mobile scheduler tab: `/m` got a Jobs view (clock icon in the nav) listing time-triggered jobs with their cadence and next-run, with run-now, disable/enable and remove buttons — same RPC surface as the desktop.
 64. ✅ Mobile chat search: a 🔍 toggle in the `/m` toolbar opens a search box that runs `sessions.search` and lists hits (title, hit count, matched seq, snippet) with an *open* button that jumps the chat to that session — same recall as the desktop Sessions view.
 65. ✅ Mobile memory tab: `/m` can add a memory (save), run consolidation, search memory, and *forget* any row (hits included) — the same actions as the desktop Memory view.
-66. Next: npm publish (deferred by user)
+66. ✅ Mobile job creation: the `/m` Jobs tab gained a *+ new job* form (label + message + cadence every/daily/once, with validation), so mobile no longer depends on the desktop or CLI to add schedules.
+67. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
