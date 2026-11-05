@@ -268,7 +268,7 @@
       var list = rs[0] || [], ms = rs[1] || [];
       var ids = {};
       ms.forEach(function (m) { if (m.sessionId) ids[m.sessionId] = 1; });
-      var shown = list.filter(function (s) { return !ids[s.id] && !s.archived && (s.chat === true || s.chat === undefined || s.id === "main"); });
+      var shown = list.filter(function (s) { return !ids[s.id] && !s.archived && (s.chat === true || s.chat === undefined || s.id === "main" || (s.entryCount === 0)); });
       if (!shown.length) shown = list.filter(function (s) { return !s.archived }).slice(0, 3);
       var html = "";
       var cur = sessId;
