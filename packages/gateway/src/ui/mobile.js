@@ -94,15 +94,20 @@
     log.scrollTop = log.scrollHeight;
     return b;
   }
+  function stopChat() {
+    window.OH.rpc("chat.abort", { sessionId: sessId }).then(function (r) { toast(r && r.ok ? "stopping…" : "not running"); }).catch(function (e) { toast(String(e)); });
+  }
   function sendChat() {
+    if (busy) { stopChat(); return; }
     var inp = $("mInput");
     var text = (inp.value || "").trim();
-    if (!text || busy) return;
+    if (!text) return;
     busy = true; inp.value = ""; autosize(inp);
     bubble("user", esc(text));
     streamingMsg = null;
     var b = bubble("assistant", "<span class='dim'>…</span>");
     streamingMsg = { node: b, buf: "" };
+    var sb = $("mSendBtn"); if (sb) { sb.textContent = "Stop"; sb.title = "stop generation"; }
     window.OH.rpc("chat.send", { sessionId: sessId, message: text }).then(function (r) {
       streamingMsg = null;
       var t = r && r.text ? r.text : "";
@@ -111,7 +116,7 @@
     }).catch(function (e) {
       streamingMsg = null;
       b.className = "bubble err"; b.innerHTML = esc(String(e));
-    }).then(function () { busy = false; loadSessions(); });
+    }).then(function () { busy = false; if (sb) { sb.textContent = "Send"; sb.title = "send"; } loadSessions(); });
   }
   function speak(text) {
     var t = String(text).slice(0, 600);
