@@ -9,6 +9,9 @@ html,body{height:100%}
 ::-webkit-scrollbar-corner{background:transparent}
 body{background:var(--bg);color:var(--txt);font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .hidden{display:none!important}
+#offlineBar{position:fixed;top:0;left:0;right:0;z-index:60;background:var(--err);color:#fff;padding:6px 14px;font-size:13px;display:block;text-align:center}
+#offlineBar.hidden{display:none}
+#offlineSec{opacity:.8;font-variant-numeric:tabular-nums}
 #app{display:grid;grid-template-columns:260px 1fr;height:100%}
 #sidebar{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px 10px;min-width:0}
 .brand{font-weight:700;font-size:15px;padding:2px 8px 12px;display:flex;align-items:center;gap:8px}

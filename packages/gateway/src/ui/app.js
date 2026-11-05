@@ -1346,8 +1346,27 @@ function showView(name) {
       else if (topic === "memory.added") { if (S.view === "memory") doMemoryBrowse() }
     };
     var everOpen = false;
+    var offTimer = null;
+    function setOffline(off) {
+      var bar = $("#offlineBar"); if (!bar) return;
+      if (off) {
+        bar.classList.remove("hidden");
+        var t0 = Date.now();
+        if (offTimer) clearInterval(offTimer);
+        offTimer = setInterval(function () {
+          var s = Math.floor((Date.now() - t0) / 1000);
+          var el = $("#offlineSec"); if (el) el.textContent = s >= 60 ? Math.floor(s / 60) + "m " + (s % 60) + "s" : s + "s";
+        }, 1000);
+      } else {
+        bar.classList.add("hidden");
+        if (offTimer) { clearInterval(offTimer); offTimer = null }
+      }
+    }
+    window.addEventListener("offline", function () { if (everOpen) setOffline(true) });
+    window.addEventListener("online", function () { window.OH.reconnect() });
     window.OH.onOpen = async function () {
       everOpen = true;
+      setOffline(false);
       $("#connDot").classList.add("on");
       $("#tokenGate").classList.add("hidden");
       $("#app").classList.remove("hidden");
@@ -1356,7 +1375,7 @@ function showView(name) {
       await loadSessionsCount();
       if (!S.loaded) { S.loaded = true; await openChat(S.session); showView("chat") }
     };
-    window.OH.onClose = function () { $("#connDot").classList.remove("on") };
+    window.OH.onClose = function () { $("#connDot").classList.remove("on"); if (everOpen) setOffline(true) };
     function showGate(msg) {
       $("#tokenGate").classList.remove("hidden");
       $("#app").classList.add("hidden");
