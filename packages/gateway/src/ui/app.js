@@ -314,6 +314,9 @@ function showView(name) {
     sending = true;
     var sb = $("#sendBtn"); sb.classList.add("stop"); sb.innerHTML = "&#9632;"; sb.title = "stop generation";
     var log = $("#chatLog");
+    var all = log.querySelectorAll(".bubble.assistant");
+    var old = all.length ? all[all.length - 1] : null;  // that answer is dropped server-side; drop it in the view too
+    if (old) old.remove();
     var wait = bubble("assistant", '<span class="thinking"><i></i><i></i><i></i></span>', { mline: "<span></span>" });
     var thk = document.createElement("details"); thk.className = "think"; thk.open = true;
     thk.innerHTML = "<summary>Thinking...</summary><pre></pre>";

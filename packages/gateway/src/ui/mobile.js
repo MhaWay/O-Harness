@@ -216,6 +216,8 @@
     busy = true;
     var sb = $("mSendBtn"); if (sb) { sb.textContent = "Stop"; sb.title = "stop generation"; }
     streamingMsg = null;
+    var asists = document.querySelectorAll("#chatLog .bubble.assistant");
+    if (asists.length) asists[asists.length - 1].remove(); // dropped server-side; drop it here too
     var b = bubble("assistant", "<span class='dim'>…</span>");
     streamingMsg = { node: b, buf: "" };
     window.OH.rpc("chat.regenerate", { sessionId: sessId }).then(function (r) {
