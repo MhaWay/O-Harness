@@ -18,6 +18,7 @@ import { AuthStore, parseCookie, sessionCookieValue, clearCookieValue, userInfoS
 import { runBackup, listBackups, restoreBackup } from "./backup.ts";
 import { runDoctor } from "./doctor.ts";
 import { LogStore } from "./log.ts";
+import { DeviceProfiles } from "./deviceprofiles.ts";
 import { AuditStore } from "./audit.ts";
 import { logToolDefs, resolveLogs } from "./logtools.ts";
 const UI_DIR = new URL("./ui/", import.meta.url);
@@ -107,6 +108,7 @@ export class Gateway {
   plugins = new PluginHost();
   log: LogStore;
   audit: AuditStore;
+  profiles: DeviceProfiles;
   sessions: SessionsStore;
   memory: MemoryStore;
   settings: SettingsStore;
@@ -145,6 +147,7 @@ export class Gateway {
     this.pairing = new PairingStore(dataDirOf(dataDir));
     this.log = new LogStore(join(dataDirOf(dataDir), "logs"));
     this.audit = new AuditStore(join(dataDirOf(dataDir), "audit"));
+    this.profiles = new DeviceProfiles({ dataDir: dataDirOf(dataDir) });
     this.auth = new AuthStore(join(dataDirOf(dataDir), "auth"));
     this.voice = new VoiceStore(join(dataDirOf(dataDir), "voice"));
     this.monitor = new MonitorStore(join(dataDirOf(dataDir), "monitor"));
@@ -156,6 +159,16 @@ export class Gateway {
       this.grants,
       (deviceId, tool, args) => this.#callDevice(deviceId, "tool.invoke", { tool, args }, 60_000),
       (topic, data) => this.#broadcastEvent(topic, data),
+      {
+        // Profile trust: a device the user marked trusted (with an optional method whitelist)
+        // skips the per-call approval prompt. This mirrors the phone's own trust of its owner.
+        trustedOk: (deviceId, tool) => {
+          const p = this.profiles.get(deviceId);
+          if (!p?.trusted) return false;
+          const allow = p.allow;
+          return !Array.isArray(allow) || allow.length === 0 || allow.includes(tool);
+        },
+      },
     );
     this.agents = new AgentRuntime({
       settings: this.settings,
@@ -178,7 +191,7 @@ export class Gateway {
       listDeviceTools: () => this.tools.list(),
       callTool: (deviceId, tool, args, requester) => this.tools.call(deviceId, tool, args ?? {}, requester),
       broadcast: (t, d) => this.#broadcastEvent(t, d),
-      devices: () => this.registry.all().map((d) => ({ id: d.id, name: d.name, kind: String(d.kind), status: d.status, capabilities: d.capabilities, meta: d.meta })),
+      devices: () => this.registry.all().map((d) => ({ id: d.id, name: this.profiles.get(d.id)?.alias ?? d.name, kind: String(d.kind), status: d.status, capabilities: d.capabilities, meta: d.meta })),
       host: () => ({ platform: platform(), arch: arch(), hostname: hostname() }),
     });
     this.scheduler = new SchedulerRuntime({
@@ -219,6 +232,9 @@ export class Gateway {
           lastSeen: Date.now(),
         };
         this.registry.register(full);
+        const prof = this.profiles.get(full.id);
+        if (prof?.alias) full.name = prof.alias;
+        this.profiles.touch(full.id, typeof (full.meta as Record<string, unknown> | undefined)?.hostname === "string" ? String((full.meta as Record<string, unknown>).hostname) : undefined);
         this.#broadcastEvent("device.up", { deviceId: full.id, device: publicDevice(full) });
         return full;
       },
@@ -235,7 +251,46 @@ export class Gateway {
     this.#monitorTimer = setInterval(() => { void this.monitor.check((t, d) => this.#monitorBroadcast(t, d), this.log).catch(() => { /* probe errors are logged inside */ }) }, 30_000);
     void this.monitor.check((t, d) => this.#monitorBroadcast(t, d), this.log).catch(() => { /* noop */ });
 
-    this.rpc.set(Methods.DevicesList, () => this.registry.listPublic());
+    this.rpc.set(Methods.DevicesList, () => {
+      const list = this.registry.listPublic() as ReturnType<Registry["listPublic"]>;
+      return list.map((d) => {
+        const p = this.profiles.get(d.id);
+        if (!p) return d;
+        const merged = { ...d, ...({} as Record<string, unknown>) };
+        if (p.alias) merged.name = p.alias;
+        const meta = { ...((d.meta ?? {}) as Record<string, unknown>) };
+        if (p.note) meta.note = p.note;
+        if (p.trusted) meta.trusted = true;
+        if (p.notifications?.enabled) meta.notifications = p.notifications;
+        merged.meta = meta;
+        if (p.lastSeenAt) merged.lastSeenAt = p.lastSeenAt;
+        return merged as typeof d;
+      });
+    });
+    this.rpc.set(Methods.DevicesProfile, (p, ctx) => {
+      const id = String(p?.id ?? "");
+      if (!id) throw new Error("devices.profile: {id, alias?, note?, trusted?, allow?, notifications?} required");
+      const patch: Record<string, unknown> = {};
+      if (typeof p?.alias === "string") patch.alias = p.alias.trim() || undefined;
+      if (typeof p?.note === "string") patch.note = p.note.trim() || undefined;
+      if (typeof p?.trusted === "boolean") patch.trusted = p.trusted;
+      if (Array.isArray(p?.allow)) patch.allow = (p!.allow as unknown[]).map(String);
+      if (p?.notifications && typeof p.notifications === "object") patch.notifications = p.notifications;
+      const saved = this.profiles.save(id, patch);
+      const dev = this.registry.get(id);
+      if (dev && typeof patch.alias === "string") dev.name = patch.alias || dev.name;
+      this.audit.note("device.profile", { actor: ctx.admin ? "admin" : "device", deviceId: id, alias: patch.alias, trusted: patch.trusted, allow: patch.allow });
+      this.#broadcastEvent("devices.changed", { deviceId: id, profile: saved });
+      return { ok: true, profile: saved };
+    });
+    this.rpc.set(Methods.DevicesForget, (p, ctx) => {
+      const id = String(p?.id ?? "");
+      if (!id) throw new Error("devices.forget: {id} required");
+      const had = this.profiles.remove(id);
+      this.audit.note("device.forget", { actor: ctx.admin ? "admin" : "device", deviceId: id, removed: had });
+      this.#broadcastEvent("devices.changed", { deviceId: id, forgotten: true });
+      return { ok: true, removed: had };
+    });
     this.rpc.set(Methods.DeviceInfo, (p) => {
       const d = this.registry.get(String(p?.deviceId));
       if (!d) throw new Error("unknown device: " + String(p?.deviceId));
@@ -1097,6 +1152,9 @@ export class Gateway {
       connectedAt: current?.connectedAt ?? Date.now(),
       lastSeen: Date.now(),
     };
+    const prof = this.profiles.get(id);
+    if (prof?.alias) dev.name = prof.alias;
+    this.profiles.touch(id, typeof msg.hostname === "string" ? msg.hostname : undefined);
     this.registry.register(dev);
     if (Array.isArray(msg.tools) && msg.tools.length) {
       this.tools.offer(dev.id, msg.tools as { name: string; description?: string; parameters?: Record<string, unknown> }[]);

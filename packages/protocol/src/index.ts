@@ -44,6 +44,8 @@ export const Methods = {
   DeviceToolsOffer: "device.tools.offer",
   DeviceToolsList: "device.tools.list",
   DeviceToolsCall: "device.tools.call",
+  DevicesProfile: "devices.profile",
+  DevicesForget: "devices.forget",
   ToolsPending: "tools.pending",
   ToolsRespond: "tools.respond",
   GrantsList: "grants.list",

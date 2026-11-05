@@ -948,7 +948,9 @@ function showView(name) {
         devs.map(function (d) {
           var tr = (d.meta && d.meta.transport) || (d.connected ? "gateway" : "");
           var ls = d.meta && d.meta.lastSeenAt ? fmtAgo(d.meta.lastSeenAt) : "-";
-          return "<tr><td>" + esc(d.name || d.id) + "</td><td>" + esc(d.kind) + "</td><td>" + (d.connected ? "<span class='tag ok'>online</span>" : "<span class='tag err'>offline</span>") + "</td><td class='dim'>" + esc(tr) + "</td><td class='dim'>" + ls + "</td></tr>";
+          var trust = (d.meta && d.meta.trusted) ? "<span class='tag ok'>trusted</span> " : "";
+                    var notif = (d.meta && d.meta.notifications && d.meta.notifications.enabled) ? "<span class='tag'>notify</span> " : "";
+                    return "<tr><td>" + esc(d.name || d.id) + "" + (d.alias !== undefined || (d.meta && d.meta.note) ? " <span class='dim'>" + esc((d.meta && d.meta.note) || "") + "</span>" : "") + "</td><td>" + esc(d.kind) + "</td><td>" + trust + notif + (d.connected ? "<span class='tag ok'>online</span>" : "<span class='tag err'>offline</span>") + "</td><td class='dim'>" + esc(tr) + "</td><td class='dim'>" + ls + "</td><td><button class='ghost' data-dmanage='" + esc(d.id) + "'>manage</button></td></tr>";
         }).join("") + "</table>" +
         "<h3 style='margin:18px 0 8px'>Pairing</h3>" +
         '<div class="row"><input id="pairKind" placeholder="kind (mobile)" class="noflex" style="width:150px"><button class="ghost" id="pairCreate">Create pair code</button><span id="pairOut" class="dim"></span></div>' +
@@ -1331,7 +1333,7 @@ function showView(name) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette() }
     });
     document.addEventListener("click", function (e) {
-      var el = e.target.closest ? e.target.closest("[data-openview],[data-open],[data-openchat],[data-mshow],[data-mkill],[data-jrun],[data-jdis],[data-jdel],[data-tyes],[data-trem],[data-tno],[data-grev],[data-prev],[data-ack]") : null;
+      var el = e.target.closest ? e.target.closest("[data-openview],[data-open],[data-openchat],[data-mshow],[data-mkill],[data-jrun],[data-jdis],[data-jdel],[data-tyes],[data-trem],[data-tno],[data-grev],[data-prev],[data-ack],[data-dmanage]") : null;
       if (!el) return;
       var d = el.dataset;
       if (d.openview) showView(d.openview);
@@ -1348,7 +1350,42 @@ function showView(name) {
       else if (d.grev) { var parts = d.grev.split("|"); rpc("grants.revoke", { deviceId: parts[0], tool: parts[1] }).then(function () { toast("revoked"); loadTools() }, function (e2) { toast(String(e2), "err") }) }
       else if (d.prev) rpc("pairing.revoke", { id: d.prev }).then(function () { toast("revoked"); loadDevices() });
       else if (d.ack) rpc("alerts.ack", { id: d.ack }).then(function () { toast("alert acked"); loadOverview() });
+      else if (d.dmanage) manageDevice(d.dmanage);
     });
+    async function manageDevice(id) {
+      try {
+        var devs = await rpc("devices.list", {});
+        var d = devs.filter(function (x) { return String(x.id) === String(id) })[0];
+        if (!d) { toast("device not found", "err"); return }
+        var m = d.meta || {};
+        var trustNow = !!m.trusted;
+        var noteNow = m.note || "";
+        var aliasNow = d.alias || (m.alias) || "";
+        var allowNow = (m.allow || []).join(", ");
+        var notifNow = !!(m.notifications && m.notifications.enabled);
+        modal("Manage device", "<div class='dim' style='margin-bottom:10px'>id <code>" + esc(String(id)) + "</code></div>" +
+          "<div class='row'><span style='width:150px' class='dim'>alias</span><input id='mdAlias' style='flex:1' placeholder='" + esc(String(d.name || id)) + "' value='" + esc(aliasNow) + "'></div>" +
+          "<div class='row'><span style='width:150px' class='dim'>note</span><input id='mdNote' style='flex:1' placeholder='what this device is' value='" + esc(noteNow) + "'></div>" +
+          "<div class='row'><span style='width:150px' class='dim'>trusted</span><label style='display:flex;gap:6px;align-items:center'><input id='mdTrust' type='checkbox'" + (trustNow ? " checked" : "") + "> skip approval prompts for this device's offered tools</label></div>" +
+          "<div class='row'><span style='width:150px' class='dim'>allowed tools</span><input id='mdAllow' style='flex:1' placeholder='e.g. notify, screenshot (empty = all offered)' value='" + esc(allowNow) + "'></div>" +
+          "<div class='row'><span style='width:150px' class='dim'>notifications</span><label style='display:flex;gap:6px;align-items:center'><input id='mdNotif' type='checkbox'" + (notifNow ? " checked" : "") + "> push events to this device</label></div>" +
+          "<div class='row' style='justify-content:flex-start'><button class='ghost danger' id='mdForget'>Forget this device</button><span class='dim'>removes the stored profile (pairings are revoked separately)</span></div>", async function () {
+          var patch = { id: id };
+          var al = $("#mdAlias").value.trim(); if (al !== aliasNow) patch.alias = al;
+          var no = $("#mdNote").value.trim(); if (no !== noteNow) patch.note = no;
+          var tr = $("#mdTrust").checked; if (tr !== trustNow) patch.trusted = tr;
+          var aw = $("#mdAllow").value.trim(); if (aw !== allowNow) patch.allow = aw ? aw.split(",").map(function (x) { return x.trim() }).filter(Boolean) : [];
+          var nt = $("#mdNotif").checked;
+          if (nt !== notifNow) patch.notifications = { enabled: nt };
+          if (Object.keys(patch).length > 1) await rpc("devices.profile", patch);
+          toast("profile saved");
+          loadDevices();
+        }, "Save");
+        $("#mdForget").onclick = async function () {
+          try { await rpc("devices.forget", { id: id }); toast("device forgotten"); loadDevices(); $("#mCancel").onclick(); } catch (e2) { toast(String(e2), "err") }
+        };
+      } catch (e) { toast(String(e), "err") }
+    }
     async function toolRespond(id, approved, remember) {
       try { await rpc("tools.respond", { id: id, approved: approved, remember: remember }); toast(approved ? "approved" : "denied"); loadTools() } catch (e) { toast(String(e), "err") }
     }

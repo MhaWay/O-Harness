@@ -62,6 +62,8 @@ export async function main(args: string[]): Promise<void> {
       "doctor [--data-dir d] [--deep] [--port p]              one-shot self-check of config, gateway, models, disk, backups",
       "token                                              print admin token",
       "devices                                             list connected devices (+transport)",
+      "devices profile <id> [--name a] [--note t] [--trusted on|off] [--allow t1,t2] [--notify on|off]", 
+      "devices forget <id>                                 remove a device profile (keeps pairing until revoked)",
       "exec [--device id] <command>                        run command on a device (local default)",
       "read [--device id] <path>                         read a file from a device",
       "write [--device id] <path> [file]                   write a file (or upload file contents)",
@@ -84,6 +86,27 @@ export async function main(args: string[]): Promise<void> {
   }
 
   if (cmd === "devices") {
+    const sub = rest[0];
+    if (sub === "profile" || sub === "set") {
+      const id = rest[1];
+      if (!id) throw new Error("usage: o-h devices profile <id> [--name alias] [--note txt] [--trusted on|off] [--allow a,b] [--notify on|off] [--forget]");
+      const p: Record<string, unknown> = { id };
+      if (flag(rest, "name")) p.alias = flag(rest, "name");
+      if (flag(rest, "note")) p.note = flag(rest, "note");
+      const tr = flag(rest, "trusted"); if (tr !== undefined) p.trusted = tr !== "off";
+      const al = flag(rest, "allow"); if (al !== undefined) p.allow = al.length ? al.split(",").map((x) => x.trim()).filter(Boolean) : [];
+      const nt = flag(rest, "notify"); if (nt !== undefined) p.notifications = { enabled: nt !== "off" };
+      const r = await callOnce("devices.profile", p, port);
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
+    if (sub === "forget") {
+      const id = rest[1];
+      if (!id) throw new Error("usage: o-h devices forget <id>");
+      const r = await callOnce("devices.forget", { id }, port);
+      console.log(JSON.stringify(r, null, 2));
+      return;
+    }
     const list = await callOnce("devices.list", undefined, port);
     console.log(JSON.stringify(list, null, 2));
     return;

@@ -1,10 +1,13 @@
 // Tool broker: devices (e.g. a phone) offer tools; the gateway enforces explicit authorization.
 // Uncalled tools raise a pending approval ("tools.ask"); standing grants skip the prompt.
+// A profile-trusted device (DeviceProfiles.trusted, optional allow whitelist) auto-approves:
+// the user already granted that device at setup time, so no per-call prompt fires.
 import { randomUUID } from "node:crypto";
 import { GrantsStore } from "@o-harness/core";
 
 export interface OfferedTool { name: string; description?: string; parameters?: Record<string, unknown> }
 export interface ToolAsk { id: string; deviceId: string; tool: string; args: unknown; requester: string; createdAt: number }
+export interface ToolBrokerOpts { trustedOk?: (deviceId: string, tool: string) => boolean }
 
 interface Ask { id: string; deviceId: string; tool: string; args: unknown; resolve: (v: unknown) => void; reject: (e: unknown) => void; timer: NodeJS.Timeout; ask: ToolAsk }
 
@@ -14,8 +17,10 @@ export class ToolBroker {
   #grants: GrantsStore;
   #invoke: (deviceId: string, tool: string, args: unknown) => Promise<unknown>;
   #broadcast: (topic: string, data: unknown) => void;
-  constructor(grants: GrantsStore, invoke: (deviceId: string, tool: string, args: unknown) => Promise<unknown>, broadcast: (topic: string, data: unknown) => void) {
+  #trustedOk: (deviceId: string, tool: string) => boolean;
+  constructor(grants: GrantsStore, invoke: (deviceId: string, tool: string, args: unknown) => Promise<unknown>, broadcast: (topic: string, data: unknown) => void, opts: ToolBrokerOpts = {}) {
     this.#grants = grants; this.#invoke = invoke; this.#broadcast = broadcast;
+    this.#trustedOk = opts.trustedOk ?? (() => false);
   }
 
   offer(deviceId: string, tools: OfferedTool[]) {
@@ -39,6 +44,7 @@ export class ToolBroker {
       this.#grants.touch(deviceId, tool);
       return await this.#invoke(deviceId, tool, args);
     }
+    if (this.#trustedOk(deviceId, tool)) return await this.#invoke(deviceId, tool, args);
     return await new Promise((resolve, reject) => {
       const id = randomUUID().slice(0, 8);
       const ask: ToolAsk = { id, deviceId, tool, args, requester, createdAt: Date.now() };

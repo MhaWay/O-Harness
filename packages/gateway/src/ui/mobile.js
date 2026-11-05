@@ -726,7 +726,8 @@
     window.OH.rpc("devices.list", {}).then(function (devs) {
       var peers = (devs || []).filter(function (d) { return String(d.id) !== String(id); });
       $("mePeers").innerHTML = peers.length ? peers.map(function (d) {
-        return "<div class='mrow'><b>" + esc(d.name || d.id) + "</b> <span class='dim'>" + esc(d.kind || "") + "</span> <span class='dim'>" + (d.connected ? "online" : "offline") + "</span></div>";
+        var trust = (d.meta && d.meta.trusted) ? " <span class='tag'>trusted</span>" : "";
+        return "<div class='mrow'><b>" + esc(d.name || d.id) + "</b> <span class='dim'>" + esc(d.kind || "") + "</span> <span class='dim'>" + (d.connected ? "online" : "offline") + "</span>" + trust + "</div>";
       }).join("") : "<div class='dim'>no other devices registered</div>";
     }).catch(function () { $("mePeers").innerHTML = "<div class='dim'>unavailable</div>"; });
     window.OH.rpc("pairing.list", {}).then(function (ps) {
