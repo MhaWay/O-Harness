@@ -390,7 +390,8 @@
       html += "<div style='margin:4px 0 8px'><button id='mJobNew' class='ghostbtn'>+ new job</button></div>";
       html += "<div id='mJobForm' style='display:none;margin:0 0 10px'>"
         + "<input id='mJobLabel' placeholder='label' style='width:100%'>"
-        + "<textarea id='mJobMsg' placeholder='message (kind chat)' style='width:100%;margin-top:6px'></textarea>"
+        + "<div style='margin-top:6px'><select id='mJobKind' style='width:100%'><option value='chat'>chat message</option><option value='minion'>minion task</option></select></div>"
+        + "<textarea id='mJobMsg' placeholder='message…' style='width:100%;margin-top:6px'></textarea>"
         + "<div style='margin-top:6px;display:flex;gap:6px'><select id='mJobCad' style='flex:1'><option value='every'>every…</option><option value='daily'>daily</option><option value='once'>once at</option></select>"
         + "<input id='mJobVal' placeholder='minutes' style='width:90px'></div>"
         + "<div style='margin-top:6px'><button id='mJobGo' class='primary'>create</button></div></div>";
@@ -412,6 +413,8 @@
         var f = $("mJobForm"); if (!f) return;
         f.style.display = f.style.display === "none" ? "block" : "none";
       };
+      var kindSel = $("mJobKind");
+      if (kindSel) kindSel.onchange = function () { $("mJobMsg").placeholder = kindSel.value === "minion" ? "task for a minion…" : "message…"; };
       var cadSel = $("mJobCad");
       if (cadSel) cadSel.onchange = function () {
         var v = $("mJobVal");
@@ -438,7 +441,8 @@
             cadence = { type: "once", at: new Date(at).toISOString() };
           }
         } catch (err) { toast("cadence: " + String(err.message || err), "err"); return; }
-        window.OH.rpc("schedule.create", { label: label, message: message, cadence: cadence }).then(function (r) {
+        var jkind = $("mJobKind") ? $("mJobKind").value : "chat";
+        window.OH.rpc("schedule.create", { label: label, message: jkind === "chat" ? message : undefined, task: jkind === "minion" ? message : undefined, cadence: cadence }).then(function (r) {
           toast(r && r.id ? "job created" : "error", r && r.id ? "ok" : "err");
           loadSched();
         }).catch(function (er) { toast(String(er), "err"); });
