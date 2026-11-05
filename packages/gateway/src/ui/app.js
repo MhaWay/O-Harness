@@ -208,7 +208,10 @@ function showView(name) {
       thk.innerHTML = "<summary>Thoughts</summary><pre>" + esc(e.reasoning) + "</pre>";
       bbl.insertBefore(thk, bbl.querySelector(".md"));
     }
-    if (e.role === "assistant") { var mh = bbl.querySelector(".meta"); if (mh) addPlay(mh, e.text); }
+    if (e.role === "assistant") {
+      var mh = bbl.querySelector(".meta");
+      if (mh) { addPlay(mh, e.text); addRegen(mh); }
+    }
     return bbl;
   }
   function addEarlierBtn() {
@@ -275,14 +278,7 @@ function showView(name) {
     try {
       var r = await rpc("chat.send", { sessionId: S.session, message: msg, effort: $("#effortSel").value });
       var replyText = r && r.text ? r.text : String(r || "");
-      if (S.streaming) {
-        S.streaming.innerHTML = md(replyText);
-        var thinkHost = S.streaming.parentElement && S.streaming.parentElement.querySelector("details.think");
-        if (thinkHost) { thinkHost.open = false; thinkHost.querySelector("summary").textContent = S.think ? "Thoughts" : "Thinking..."; if (!S.think) thinkHost.remove(); }
-        var metaHost = S.streaming.parentElement && S.streaming.parentElement.querySelector(".meta");
-        if (metaHost) addPlay(metaHost, replyText);
-        if (V.autoSpeak) speakText(replyText);
-      }
+      attachFinal(replyText);
     } catch (e) {
       if (S.streaming) S.streaming.innerHTML = '<span class="dim">error: ' + esc(String(e)) + "</span>";
       toast(String(e), "err");
@@ -296,6 +292,53 @@ function showView(name) {
     toast("stopping…");
     rpc("chat.abort", { sessionId: S.session }).catch(function () { });
   }
+  function attachFinal(text) {
+    if (!S.streaming) return;
+    S.streaming.innerHTML = md(text);
+    var parent = S.streaming.parentElement;
+    var thk = parent && parent.querySelector("details.think");
+    if (thk) { thk.open = false; thk.querySelector("summary").textContent = S.think ? "Thoughts" : "Thinking..."; if (!S.think) thk.remove(); }
+    var metaHost = parent && parent.querySelector(".meta");
+    if (metaHost) { addPlay(metaHost, text); addRegen(metaHost); }
+    if (V.autoSpeak) speakText(text);
+  }
+  function addRegen(metaHost) {
+    var b = document.createElement("button");
+    b.className = "ghost"; b.textContent = "again"; b.title = "regenerate this answer";
+    b.style.cssText = "margin-left:6px;padding:1px 7px;font-size:11px";
+    b.onclick = function () { regenerate(); };
+    metaHost.appendChild(b);
+  }
+  async function regenerate() {
+    if (sending) return;
+    sending = true;
+    var sb = $("#sendBtn"); sb.classList.add("stop"); sb.innerHTML = "&#9632;"; sb.title = "stop generation";
+    var log = $("#chatLog");
+    var wait = bubble("assistant", '<span class="thinking"><i></i><i></i><i></i></span>', { mline: "<span></span>" });
+    var thk = document.createElement("details"); thk.className = "think"; thk.open = true;
+    thk.innerHTML = "<summary>Thinking...</summary><pre></pre>";
+    wait.insertBefore(thk, wait.querySelector(".md"));
+    log.appendChild(wait);
+    log.scrollTop = log.scrollHeight;
+    S.think = "";
+    S.streaming = wait.querySelector(".md");
+    S.streaming.dataset.buf = "";
+    try {
+      var r = await rpc("chat.regenerate", { sessionId: S.session, effort: $("#effortSel") ? $("#effortSel").value : undefined });
+      if (S.streaming) {
+        if (r && r.ok) attachFinal(r.text);
+        else S.streaming.innerHTML = '<span class="dim">' + esc(r && r.reason ? r.reason : "nothing to regenerate") + "</span>";
+      }
+    } catch (e) {
+      if (S.streaming) S.streaming.innerHTML = '<span class="dim">error: ' + esc(String(e)) + "</span>";
+      toast(String(e), "err");
+    }
+    S.streaming = null; sending = false;
+    var sb2 = $("#sendBtn"); sb2.classList.remove("stop"); sb2.innerHTML = "&#11014;"; sb2.title = "send"; sb2.disabled = false;
+    loadSessionsCount();
+    $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
+  }
+  window.regenerate = regenerate;
   window.sendChat = sendChat;
 
   // ---- Realtime voice (Jarvis mode): persistent mic<->LFM3 relay, live captions ----

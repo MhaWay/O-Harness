@@ -351,6 +351,23 @@ export class Gateway {
       ac.abort();
       return { ok: true };
     });
+    this.rpc.set(Methods.ChatRegenerate, async (p) => {
+      const sessionId = String(p?.sessionId ?? "main");
+      this.#chatAborts.get(sessionId)?.abort();
+      const ac = new AbortController();
+      this.#chatAborts.set(sessionId, ac);
+      try {
+        const r = await this.chat.regenerate(sessionId, {
+          effort: EFFORTS.includes(p?.effort) ? p.effort : undefined,
+          model: p?.model ? String(p.model) : undefined,
+          signal: ac.signal,
+        });
+        if (!r) return { ok: false, reason: "nothing to regenerate" };
+        return { ok: true, text: r.text, dropped: r.dropped };
+      } finally {
+        if (this.#chatAborts.get(sessionId) === ac) this.#chatAborts.delete(sessionId);
+      }
+    });
     this.rpc.set(Methods.ChatHistory, (p) => {
       const s = this.sessions.get(String(p?.sessionId ?? "main"));
       if (!s) return null;

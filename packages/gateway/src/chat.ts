@@ -1,7 +1,7 @@
 // Chat: conversational interface bound to a persistent session, with a bounded tool loop.
 // History = session entries of kind 'chat' (user/assistant); memory injected as context.
 // Tools: local exec/fs/memory + device-offered tools ("<deviceId>:<tool>", may prompt owner).
-import { chatOnceStream, type SettingsStore } from "./models.ts";
+import { chatOnce, chatOnceStream, type SettingsStore } from "./models.ts";
 import type { SessionsStore, MemoryStore } from "@o-harness/core";
 
 export interface ChatOptions {
@@ -222,5 +222,27 @@ export class ChatRuntime {
     const asEntry = this.#opts.sessions.append(sessionId, { ts: Date.now(), from: "assistant", kind: "chat", data: { role: "assistant", text, tools: steps.length ? steps.map((x) => x.tool) : undefined, steps: steps.length ? steps.map((x) => ({ tool: x.tool, args: Object.fromEntries(Object.entries(x.args ?? {}).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 300) : v])) })) : undefined, reasoning: thinkAll ? thinkAll.slice(0, 6000) : undefined } });
     this.#opts.broadcast?.("chat.message", { sessionId, entry: asEntry });
     return { text, entries: s.entries.length, toolSteps: steps.length ? steps : undefined };
+  }
+
+  /**
+   * Regenerate the last answer: pop back to just before the last user message
+   * (it is re-sent through chat(), so the user turn is re-appended once), then run again.
+   * Returns null when the session has no user message. `dropped` = entries removed.
+   */
+  async regenerate(sessionId: string, opts: { effort?: "none" | "low" | "medium" | "xhigh"; model?: string; signal?: AbortSignal } = {}): Promise<{ text: string; dropped: number } | null> {
+    const s = this.#opts.sessions.get(sessionId);
+    if (!s) throw new Error("unknown session: " + sessionId);
+    let idx = -1;
+    for (let i = s.entries.length - 1; i >= 0; i--) {
+      const e = s.entries[i] as any;
+      if (e.kind === "chat" && e.data?.role === "user") { idx = i; break; }
+    }
+    if (idx < 0) return null;
+    const message = String(s.entries[idx].data?.text ?? "");
+    const dropped = s.entries.length - idx - 1; // entries removed besides the re-sent user message
+    while (s.entries.length > idx) this.#opts.sessions.removeLast(sessionId);
+    this.#opts.broadcast?.("sessions.changed", { sessionId, regenerated: true, dropped });
+    const res = await this.chat(sessionId, message, opts);
+    return { text: res.text, dropped };
   }
 }

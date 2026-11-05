@@ -201,9 +201,34 @@
     streamingMsg = null;
     window.OH.rpc("chat.history", { sessionId: sessId }).then(function (es) {
       (es || []).forEach(function (e) {
-        bubble(e.role === "user" ? "user" : "assistant", esc(e.text || ""), (e.seq ? e.seq + " · " + (e.role || "") : ""));
+        var b = bubble(e.role === "user" ? "user" : "assistant", esc(e.text || ""), (e.seq ? e.seq + " · " + (e.role || "") : ""));
+        if (e.role !== "user") {
+          var bt = document.createElement("button"); bt.className = "ghostbtn"; bt.textContent = "again";
+          bt.style.cssText = "margin-left:6px;font-size:11px;padding:1px 7px";
+          bt.onclick = function () { regenChat(); };
+          var mt = b.querySelector(".meta"); if (mt) mt.appendChild(bt);
+        }
       });
     }).catch(function () { });
+  }
+  function regenChat() {
+    if (busy) { stopChat(); return; }
+    busy = true;
+    var sb = $("mSendBtn"); if (sb) { sb.textContent = "Stop"; sb.title = "stop generation"; }
+    streamingMsg = null;
+    var b = bubble("assistant", "<span class='dim'>…</span>");
+    streamingMsg = { node: b, buf: "" };
+    window.OH.rpc("chat.regenerate", { sessionId: sessId }).then(function (r) {
+      streamingMsg = null;
+      b.innerHTML = esc((r && r.ok) ? (r.text || "") : ((r && r.reason) || "nothing to regenerate"));
+    }).catch(function (e) {
+      streamingMsg = null;
+      b.className = "bubble err"; b.innerHTML = esc(String(e));
+    }).then(function () {
+      busy = false;
+      if (sb) { sb.textContent = "Send"; sb.title = "send"; }
+      loadSessions();
+    });
   }
 
   function loadMinions() {

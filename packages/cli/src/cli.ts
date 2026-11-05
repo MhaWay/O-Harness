@@ -148,6 +148,14 @@ export async function main(args: string[]): Promise<void> {
       console.log(JSON.stringify(r));
       return;
     }
+    if (sub === "regen" || sub === "regenerate") {
+      const sessionId = flag(cargs, "session") ?? "main";
+      const effort = flag(cargs, "effort");
+      const r = await callOnce("chat.regenerate", { sessionId, effort }, port);
+      if (!r || r.ok === false) throw new Error(String(r && r.reason ? r.reason : "regenerate failed"));
+      console.log(r.text);
+      return;
+    }
     throw new Error("unknown chat subcommand: " + sub);
   }
 

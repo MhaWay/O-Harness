@@ -45,6 +45,7 @@ export const Methods = {
   GrantsRevoke: "grants.revoke",
   ChatSend: "chat.send",
   ChatAbort: "chat.abort",
+  ChatRegenerate: "chat.regenerate",
   ChatHistory: "chat.history",
   ScheduleCreate: "schedule.create",
   ScheduleList: "schedule.list",

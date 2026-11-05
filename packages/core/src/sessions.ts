@@ -79,6 +79,15 @@ export class SessionsStore {
     return true;
   }
 
+  /** Remove the last entry of a session (used by chat regenerate). Returns it, or null when empty. */
+  removeLast(id: string): SessionEntry | null {
+    const s = this.#sessions.get(id);
+    if (!s || !s.entries.length) return null;
+    const e = s.entries.pop() as SessionEntry;
+    this.#persist(id);
+    return e;
+  }
+
   /** Rename a session; empty title keeps the current one. Returns false if unknown. */
   rename(id: string, title: string): boolean {
     const s = this.#sessions.get(id);
