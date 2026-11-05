@@ -276,6 +276,14 @@ export class Gateway {
       if (ok) this.#broadcastEvent("sessions.changed", { sessionId: id });
       return { ok };
     });
+    this.rpc.set(Methods.SessionsSearch, (p) => {
+      const q = String(p?.q ?? "");
+      if (!q.trim()) throw new Error("sessions.search: q required");
+      return this.sessions.search(q, {
+        ...(typeof p?.kind === "string" ? { kind: p.kind } : {}),
+        ...(typeof p?.limit === "number" ? { limit: Math.max(1, Math.min(200, p.limit)) } : {}),
+      });
+    });
     if (!this.sessions.get("main")) this.sessions.create("main", "main");
 
     // memory: ADD-only store, bitemporal, hybrid retrieval (see packages/core/src/memory.ts)

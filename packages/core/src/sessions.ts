@@ -71,6 +71,37 @@ export class SessionsStore {
     return entry;
   }
 
+  /** Full-text search across session titles and entry text (case-insensitive substring).
+   * kind filters entry kinds (e.g. "chat"); q matches title OR at least one entry's text/data. */
+  search(q: string, opts?: { kind?: string; limit?: number }): Array<{
+    id: string; title: string; lastTs: number; hits: number; matchTs: number; matchSeq: number; snippet: string;
+  }> {
+    const needle = String(q ?? "").trim().toLowerCase();
+    if (!needle) return [];
+    const kind = opts?.kind;
+    const limit = opts?.limit ?? 50;
+    const out: Array<{ id: string; title: string; lastTs: number; hits: number; matchTs: number; matchSeq: number; snippet: string }> = [];
+    for (const s of this.#sessions.values()) {
+      const titleHit = s.title.toLowerCase().includes(needle);
+      const texts: Array<{ seq: number; ts: number; text: string }> = [];
+      for (const e of s.entries) {
+        if (kind && e.kind !== kind) continue;
+        const d = e.data as { text?: unknown } | undefined;
+        const text = typeof d?.text === "string" ? d.text : JSON.stringify(e.data ?? "");
+        if (text.toLowerCase().includes(needle)) texts.push({ seq: e.seq, ts: e.ts, text });
+      }
+      if (!titleHit && !texts.length) continue;
+      const first = texts[0];
+      const snip = first ? first.text.replace(/\s+/g, " ").slice(0, 180) : "";
+      out.push({
+        id: s.id, title: s.title, lastTs: s.entries.length ? s.entries[s.entries.length - 1].ts : s.createdAt,
+        hits: texts.length + (titleHit ? 1 : 0), matchTs: first ? first.ts : s.createdAt, matchSeq: first ? first.seq : 0, snippet: snip,
+      });
+      if (out.length >= limit) break;
+    }
+    return out.sort((a, b) => b.matchTs - a.matchTs);
+  }
+
   /** Remove a session and its file. The id "main" is refused — it is the chat default. */
   remove(id: string): boolean {
     if (id === "main" || !this.#sessions.has(id)) return false;

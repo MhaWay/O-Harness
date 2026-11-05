@@ -137,6 +137,7 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "sessions.append": "write",
   "sessions.delete": "write",
   "sessions.rename": "write",
+  "sessions.search": "read",
   "chat.send": "write",
   "chat.abort": "write",
   "chat.regenerate": "write",

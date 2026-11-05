@@ -630,7 +630,7 @@ function showView(name) {
   async function loadSessions() {
     await loadSessionsCount();
     $("#v-sessions").innerHTML =
-      '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button></div>' +
+      '<h2 class="sec">Sessions</h2><div class="row"><button class="ghost" id="newSessBtn">+ New session</button><input id="sessQ" placeholder="search sessions... (Enter)" style="flex:1"><button class="ghost" id="sessQGo">Search</button></div><div id="sessHits"></div>' +
       "<table><tr><th>title</th><th>id</th><th>entries</th><th>created</th><th></th></tr>" +
       S.sessions.slice().sort(function (a, b) { return b.createdAt - a.createdAt }).map(function (s) {
         return "<tr><td>" + esc(s.title) + "</td><td class='dim'>" + esc(String(s.id).slice(0, 8)) + "</td><td>" + (s.entryCount || 0) + "</td><td>" + fmtDT(s.createdAt) + "</td><td><button class='ghost' data-openchat='" + esc(s.id) + "'>open chat</button>" +
@@ -668,6 +668,23 @@ function showView(name) {
         }, "Delete");
       };
     });
+    var runSessSearch = async function () {
+      var q = $("#sessQ").value.trim();
+      if (!q) { $("#sessHits").innerHTML = ""; return }
+      try {
+        var hits = await rpc("sessions.search", { q: q, limit: 50 });
+        $("#sessHits").innerHTML = hits.length
+          ? "<table><tr><th>session</th><th>match</th><th></th></tr>" + hits.map(function (h) {
+            return "<tr><td>" + esc(h.title) + " <span class='dim'>(" + h.hits + " hits)</span></td><td class='dim' title='seq " + h.matchSeq + "'>" + esc(h.snippet.slice(0, 90)) + (h.snippet.length > 90 ? "…" : "") + "</td><td><button class='ghost' data-hit='" + esc(String(h.id)) + "'>open</button></td></tr>";
+          }).join("") + "</table>"
+          : "<div class='dim'>no sessions matching \"" + esc(q) + "\"</div>";
+        $$("#sessHits [data-hit]").forEach(function (b) {
+          b.onclick = async function () { showView("chat"); await openChat(b.dataset.hit); };
+        });
+      } catch (err) { $("#sessHits").innerHTML = "<div class='dim'>search failed: " + esc(String(err)) + "</div>" }
+    };
+    $("#sessQGo").onclick = runSessSearch;
+    $("#sessQ").onkeydown = function (ev) { if (ev.key === "Enter") runSessSearch() };
   }
   async function loadMinions() {
     var host = $("#v-minions");

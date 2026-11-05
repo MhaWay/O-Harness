@@ -72,7 +72,7 @@ export async function main(args: string[]): Promise<void> {
       "memory add|search|list|consolidate                  durable temporal memory",
       "pair create|list|revoke|redeem                      pairing codes + device secrets with scopes",
       "tools list|call|pending|respond / grants            device-offered tools + approvals",
-      "sessions list / session show|create|append          session logs",
+      "sessions list / sessions search <text> / session show|create|append   session logs",
       "node connect [--url wss://..] [--insecure]          run a node that connects to a gateway",
     ].join("\n"));
     return;
@@ -618,6 +618,18 @@ export async function main(args: string[]): Promise<void> {
 
 
   if (cmd === "sessions") {
+    const sub = rest[0];
+    if (sub === "search") {
+      const q = rest.slice(1).filter((a) => !a.startsWith("--")).join(" ");
+      if (!q) throw new Error("usage: o-h sessions search <text> [--kind chat]");
+      const kind = flag(rest, "kind");
+      const hits = await callOnce("sessions.search", { q, ...(kind ? { kind } : {}), limit: 50 }, port);
+      for (const h of hits) {
+        console.log(h.id + " | " + h.title + " | hits " + h.hits + " | " + new Date(h.matchTs).toISOString().slice(0, 16) + "\n    …" + h.snippet + (h.snippet.length >= 180 ? "…" : ""));
+      }
+      console.log((hits.length || 0) + " sessions matching \"" + q + "\"");
+      return;
+    }
     const list = await callOnce("sessions.list", undefined, port);
     console.log(JSON.stringify(list, null, 2));
     return;

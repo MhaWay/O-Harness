@@ -20,6 +20,7 @@ export const Methods = {
   SessionsAppend: "sessions.append",
   SessionsDelete: "sessions.delete",
   SessionsRename: "sessions.rename",
+  SessionsSearch: "sessions.search",
   SettingsGet: "settings.get",
   SettingsSave: "settings.save",
   ModelsFetch: "models.fetch",
