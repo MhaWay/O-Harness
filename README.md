@@ -237,6 +237,25 @@ Stale entries (dead pid or heartbeat older than 90s) are pruned on read. Scaling
 separate data dirs per instance (isolated state), possibly behind a reverse proxy; the registry makes
 accidental sharing visible instead of silently corrupting shared stores.
 
+## Production (on the machine)
+O-Harness runs as a docker service on the host (the `o-harness` container, `--restart=unless-stopped`, host network),
+serving the GUI at `http://<machine-ip>:18711/` and the mobile page `/m`. Data lives in the host's `/root/.o-harness`.
+The app tree is `/opt/o-harness` (extracted WITHOUT dereferencing, workspace symlinks are load-bearing).
+
+```sh
+# deploy loop (run from the dev container):
+tar -cf /tmp/oh-repo.tar -C /root/Projects/O-Harness --exclude=.git .   # raw tar, NO -h
+docker cp /tmp/oh-repo.tar gx10-8e13:/tmp/   # or docker run ... < tar pipe
+ssh/docker chroot /host /opt/oh-redeploy.sh   # re-extract + restart + /health check
+```
+
+Redeploy script `/opt/oh-redeploy.sh` (on host): stops the container, re-extracts `/tmp/oh-repo.tar`
+into `/opt/o-harness`, restarts `alpine` + `chroot /host env HOME=/root node --experimental-strip-types
+--no-warnings /opt/o-harness/packages/gateway/src/bin.ts --host 0.0.0.0 --port 18711`, verifies `/health`.
+The `o-harness` container itself is the persistence layer across host reboots (docker is enabled
+in systemd and its containers restart). For the gateway restart (not redeploys), restart is also
+safe because every runtime state is on disk in `/root/.o-harness`.
+
 ## Tests
 
 pnpm install && pnpm test   # node test runner over strip-types: core unit tests + gateway integration (in-process ws server on an ephemeral port, no model calls).
