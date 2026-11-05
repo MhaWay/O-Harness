@@ -190,6 +190,14 @@
       var cur = sessId;
       shown.forEach(function (s) { html += "<option value='" + esc(s.id) + "'" + (s.id === cur ? " selected" : "") + ">" + esc(s.title) + " (" + (s.entryCount || 0) + ")</option>"; });
       if (!shown.some(function (s) { return s.id === cur; })) { sessId = shown.length ? shown[0].id : "main"; localStorage.setItem("oh.msess", sessId); }
+      window.__ohSessions = shown;
+      var pbn = $("mPinBtn");
+      if (pbn) {
+        var act = null;
+        for (var qi = 0; qi < shown.length; qi++) { if (shown[qi].id === sessId) { act = shown[qi]; break } }
+        pbn.textContent = String.fromCharCode(128204);
+        pbn.title = (act && act.pinned) ? "unpin" : "pin";
+      }
       sel.innerHTML = html || "<option value='main'>main</option>";
     }).catch(function () { });
   }
@@ -357,6 +365,18 @@
     $("mInput").addEventListener("input", function () { autosize(this); });
     $("mNewBtn").onclick = newChat;
     $("mSessions").onchange = function () { sessId = this.value; localStorage.setItem("oh.msess", sessId); loadChat(); };
+    function curSession() { var A = window.__ohSessions || []; for (var i = 0; i < A.length; i++) { if (A[i].id === sessId) return A[i] } return null; }
+    $("mPinBtn").onclick = async function () {
+      var s = curSession();
+      if (!s) { toast("open a chat first"); return; }
+      try { await window.OH.rpc("sessions.pin", { id: s.id, pinned: !s.pinned }); toast(s.pinned ? "unpinned" : "pinned", "ok"); loadSessions(); } catch (e) { toast(String(e)); }
+    };
+    $("mRenBtn").onclick = async function () {
+      var s = curSession();
+      if (!s) { toast("open a chat first"); return; }
+      var t = prompt("session title", s.title || "");
+      if (t && t.trim()) { try { await window.OH.rpc("sessions.rename", { id: s.id, title: t.trim() }); toast("renamed", "ok"); loadSessions(); } catch (e) { toast(String(e)); } }
+    };
     $("mMicBtn").onclick = micToggle;
     $("mSpeakBtn").onclick = function () { autoSpeak = !autoSpeak; localStorage.setItem("oh.autospeak", autoSpeak ? "on" : "off"); this.classList.toggle("on", autoSpeak); };
     $("mSpeakBtn").classList.toggle("on", autoSpeak);
