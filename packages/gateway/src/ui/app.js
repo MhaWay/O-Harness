@@ -94,8 +94,22 @@
         out.push("<blockquote>" + q.join("<br>") + "</blockquote>"); continue;
       }
       if (!t2) { i++; continue }
+      if (t2.charAt(0) === "|") {
+        var rows = [];
+        while (i < lines.length && lines[i].trim().charAt(0) === "|") { rows.push(lines[i].trim()); i++ }
+        if (rows.length > 1) {
+          var sep = /^[\s|:-]+$/.test(rows[1].replace(/\|/g, "")) && rows[1].indexOf("-") >= 0;
+          function rowCells(r, tag) {
+            return "<tr>" + r.replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (c) { return "<" + tag + ">" + inline(c.trim()) + "</" + tag + ">" }).join("") + "</tr>";
+          }
+          var head = sep ? rowCells(rows[0], "th") : "";
+          var rest = sep ? rows.slice(2).map(function (r) { return rowCells(r, "td") }) : rows.map(function (r) { return rowCells(r, "td") });
+          out.push("<table class='mdtbl'>" + head + rest.join("") + "</table>");
+          continue;
+        }
+      }
       var para = [];
-      while (i < lines.length && lines[i].trim() && lines[i].slice(0, 3) !== "~~~" && lines[i].charAt(0) !== "#") { para.push(lines[i]); i++ }
+      while (i < lines.length && lines[i].trim() && lines[i].slice(0, 3) !== "~~~" && lines[i].slice(0, 3) !== BT + BT + BT && lines[i].charAt(0) !== "#" && lines[i].trim().charAt(0) !== "|") { para.push(lines[i]); i++ }
       out.push("<p>" + inline(para.join(" ")) + "</p>");
     }
     return out.join("");
