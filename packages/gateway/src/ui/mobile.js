@@ -30,6 +30,7 @@
     }
     else if (topic === "chat.tool") { if (data && data.sessionId === sessId) { var tn2 = streamingMsg && streamingMsg.node && streamingMsg.node.isConnected ? streamingMsg.node : (document.querySelectorAll("#chatLog .bubble.assistant")[document.querySelectorAll("#chatLog .bubble.assistant").length - 1] || null); if (tn2) toolEvent({ node: tn2 }, data); } }
     else if (topic === "chat.message") { streamingMsg = null; }
+    else if (topic === "alert.fired" || topic === "alert.resolved") { if (tabOn("pulse")) loadPulse(); }
   };
   window.OH.onOpen = function () { setSt("ok", "online"); offerTools(); };
   window.OH.onClose = function () { setSt("warn", "offline"); };
@@ -601,11 +602,65 @@
   }
   function lastAskId() { return asks.length ? asks[asks.length - 1].id : ""; }
 
+  function ago(ts) {
+    var s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (s < 60) return s + "s ago";
+    if (s < 3600) return Math.floor(s / 60) + "m ago";
+    if (s < 86400) return Math.floor(s / 3600) + "h ago";
+    return Math.floor(s / 86400) + "d ago";
+  }
+  function pcard(t, big, sub) {
+    return "<div class='card'><h3>" + t + "</h3><div class='big'>" + big + "</div><div class='dim'>" + sub + "</div></div>";
+  }
+  function inCad(j) {
+    if (!j) return "no schedule";
+    var d = j.nextRunAt - Date.now();
+    if (d < 0) return "now";
+    var m = Math.round(d / 60000);
+    if (m < 60) return "in " + m + "m";
+    var h = Math.round(m / 60);
+    if (h < 48) return "in " + h + "h";
+    return "in " + Math.round(h / 24) + "d";
+  }
+  function loadPulse() {
+    var host = $("sec-pulse");
+    if (!host) return;
+    Promise.all([
+      window.OH.rpc("monitor.status", {}),
+      window.OH.rpc("agents.list", {}),
+      window.OH.rpc("devices.list", {}),
+      window.OH.rpc("schedule.list", {})
+    ]).then(function (rs) {
+      var mon = rs[0] || {};
+      var minions = rs[1] || [];
+      var devs = rs[2] || [];
+      var jobs = (rs[3] || []).filter(function (j) { return !j.disabled });
+      var running = minions.filter(function (m) { return m.status === "running" || m.status === "queued" || m.status === "waiting" });
+      var onlineDev = devs.filter(function (d) { return d.connected }).length;
+      var openA = (mon.alerts || []).filter(function (a) { return a.state === "firing" && !a.acked });
+      var nextJob = jobs.slice().sort(function (a, b) { return a.nextRunAt - b.nextRunAt })[0];
+      var svc = (mon.statuses || []).map(function (s) {
+        return "<div class='mrow'>" + (s.ok ? "&#128994; " : "&#128308; ") + "<b>" + esc(s.name) + "</b> <span class='dim'>" + (s.latencyMs != null ? s.latencyMs + "ms" : "-") + (s.consecutiveFails > 1 ? " \u00b7 " + s.consecutiveFails + " fails" : "") + " \u00b7 " + ago(s.checkedAt || 0) + "</span></div>";
+      }).join("") || "<div class='dim'>no services probed yet</div>";
+      var alertHtml = openA.map(function (a) {
+        return "<div class='mrow'>&#128293; <b>" + esc(a.name) + "</b> <span class='dim'>" + esc(String(a.detail || "").slice(0, 60)) + " \u00b7 " + ago(a.at) + "</span><div style='margin-top:4px'><button class='ghostbtn' data-ack='" + esc(String(a.id)) + "'>ack</button></div></div>";
+      }).join("") || "<div class='dim'>no open alerts</div>";
+      host.innerHTML = "<div class='cards'>" +
+        pcard("Minions", running.length ? running.length + " active" : "idle", minions.length + " total") +
+        pcard("Devices", onlineDev + " online", devs.length + " registered") +
+        pcard("Jobs", String(jobs.length), "next " + inCad(nextJob)) +
+        "</div>" +
+        "<div class='card'><h3>Alerts</h3>" + alertHtml + "</div>" +
+        "<div class='card'><h3>Services <button class='ghostbtn' data-pchk='1' style='float:right'>check now</button></h3>" + svc +
+        (mon.lastCheckAt ? "<div class='dim'>last check " + ago(mon.lastCheckAt) + "</div>" : "") + "</div>";
+    }, function (e) { host.innerHTML = "<div class='dim'>error: " + esc(String(e)) + "</div>" });
+  }
   function tabOn(name) { var b = document.querySelector("#mNav button[data-tab='" + name + "']"); return b && b.classList.contains("on"); }
   function showTab(name) {
     document.querySelectorAll("#mNav button").forEach(function (b) { b.classList.toggle("on", b.dataset.tab === name); });
     document.querySelectorAll(".msec").forEach(function (s) { s.classList.toggle("on", s.id === "sec-" + name); });
-    if (name === "minions") loadMinions();
+    if (name === "pulse") loadPulse();
+    else if (name === "minions") loadMinions();
     else if (name === "sched") loadSched();
     else if (name === "memory") loadMemory();
     else if (name === "tools") loadAsks();
@@ -716,9 +771,17 @@
     $("mUnpairBtn").onclick = unpair;
     document.querySelectorAll("#mNav button").forEach(function (b) { b.onclick = function () { showTab(b.dataset.tab); }; });
     document.addEventListener("click", function (ev) {
-      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a],[data-grev],[data-mprev]");
+      var t = ev.target.closest && ev.target.closest("[data-yes],[data-rem],[data-no],[data-a],[data-grev],[data-mprev],[data-ack],[data-pchk]");
       if (t && t.dataset.mprev) {
         if (confirm("revoke this pairing?")) window.OH.rpc("pairing.revoke", { id: t.dataset.mprev }).then(function () { toast("pairing revoked"); showMe(); });
+        return;
+      }
+      if (t && t.dataset.pchk) {
+        window.OH.rpc("monitor.check", {}).then(function () { toast("services checked"); loadPulse(); }, function (e9) { toast(String(e9), "err"); });
+        return;
+      }
+      if (t && t.dataset.ack) {
+        window.OH.rpc("alerts.ack", { id: t.dataset.ack }).then(function () { toast("alert acked"); loadPulse(); });
         return;
       }
       if (t && t.dataset.grev) {
