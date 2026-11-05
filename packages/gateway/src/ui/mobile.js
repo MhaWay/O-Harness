@@ -360,7 +360,7 @@
       (list || []).sort(function (a, b) { return b.createdAt - a.createdAt; });
       var html = "<div class='card'><h3>Dispatch a task</h3><textarea id='mTask' rows='2' placeholder='task for a minion…'></textarea><button id='mSpawn' class='primary' style='width:100%'>Spawn</button></div><div class='card'>";
       (list || []).slice(0, 30).forEach(function (m) {
-        html += "<div class='mrow'><b>" + esc(m.title) + "</b> <span class='badge'>" + esc(m.status) + "</span> <span class='dim'>t" + m.turnsUsed + "/" + m.maxTurns + "</span><br><span class='dim'>" + esc(String(m.result || m.error || "").slice(0, 180)) + "</span></div>";
+        html += "<div class='mrow'><b>" + esc(m.title) + "</b> <span class='badge'>" + esc(m.status) + "</span> <span class='dim'>t" + m.turnsUsed + "/" + m.maxTurns + "</span><br><span class='dim'>" + esc(String(m.result || m.error || "").slice(0, 180)) + "</span>" + ((m.status === "running" || m.status === "queued" || m.status === "waiting") ? "<div style='margin-top:4px'><button class='ghostbtn' data-mkill='" + esc(m.id) + "'>kill</button></div>" : "") + "</div>";
       });
       if (!(list || []).length) html += "<div class='dim'>no minions yet</div>";
       html += "</div>";
@@ -370,6 +370,10 @@
         if (!t) { toast("type a task"); return; }
         window.OH.rpc("agents.spawn", { task: t, title: "mobile" }).then(function (m) { toast("spawned " + m.id.slice(0, 8)); loadMinions(); }).catch(function (e) { toast(String(e), "err"); });
       };
+      host.querySelectorAll("[data-mkill]").forEach(function (b) { b.onclick = function () {
+        if (!confirm("kill this minion?")) return;
+        window.OH.rpc("agents.kill", { id: b.dataset.mkill }).then(function (r) { toast(r && r.ok ? "killed" : "not killable", r && r.ok ? "ok" : "err"); loadMinions(); });
+      }; });
     }).catch(function (e) { host.innerHTML = "<div class='card'>" + esc(String(e)) + "</div>"; });
   }
   function fmtCad(c) {
