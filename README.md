@@ -163,7 +163,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 70. ✅ Scheduler job kinds from the GUI: the Scheduler view now exposes a **chat message vs minion task** selector (and a session field for chat jobs), so scheduled background work is fully creatable from the browser — no CLI needed.
 71. ✅ Mobile job kinds: the `/m` job form now offers **chat message vs minion task** (same `schedule.create` surface), matching the desktop scheduler.
 72. ✅ Mobile job targeting: the `/m` job form now carries a **session selector** for chat jobs (live `sessions.list`, archived hidden, `main` preselected, hidden for minion tasks), so scheduled messages can be aimed at any session from the phone.
-73. Next: npm publish (deferred by user)
+73. ✅ Mobile slash commands: the `/m` input understands `/help`, `/new`, `/rename <t>`, `/thinking none|low|medium|xhigh`, `/models`, `/memory <q>`, `/export`, `/pin`, `/archive`/`/unarchive` and `/stop` — each answered as a system bubble (or handled locally: `/new` creates and switches sessions, `/thinking` stores the effort for the next send), the same command surface as the desktop command palette.
+74. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
