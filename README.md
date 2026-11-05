@@ -131,7 +131,8 @@ sessions with thousands of entries. Legacy tab-style UI is still at /legacy.
 38. ✅ Agent-loop autonomy: the chat loop no longer has a turn limit — the model decides when it is done. A dsh-style `<system-reminder>` is re-injected every turn keeping it focused on finishing, guarded only by a 30-minute wall-clock deadline and a death-loop detector (the same call 4x). If a guard trips, the model writes a “done vs remaining” wrap-up instead of stopping cold.
 39. ✅ Realtime voice view (Jarvis mode): new GUI tab with a persistent mic<->LFM3 realtime relay through the gateway (`/voice` ws), server-side VAD, live transcripts of both speakers, a mic mute that keeps the session alive, and “send transcript to chat”. Messages queued until the upstream opens.
 40. ✅ Authz hardening + audit trail: scope enforcement is fail-closed (unmapped methods deny, `admin > write > read` hierarchy), every deny is audited, and authz-relevant events (login ok/deny/limit, pair redeem/deny, device revoke, backup restore, scope deny) land in an append-only `audit.jsonl` with rotation. `o-h logs audit [--q …]` or `logs.audit` RPC
-41. Next: npm publish (deferred by user)
+41. ✅ Live status widgets: the topbar model pill shows the active model + thinking level (updates in place via `settings.changed`), and the sidebar foot shows protocol, session count and gateway pid — both were dead placeholders before
+42. Next: npm publish (deferred by user)
 Every RPC error, login failure and minion failure is logged as a structured entry (ring buffer +
 daily JSONL under `~/.o-harness/logs/`). `o-h logs tail|stats` browse them;
 `o-h logs resolve` streams a digest to your default model, which analyzes root causes read-only. Analyses accumulate in a dedicated `logs-resolver` session, so follow-up resolutions inherit the context of previous rounds.
