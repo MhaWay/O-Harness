@@ -95,11 +95,11 @@ class OhTools(private val ctx: Context) {
         ctx.contentResolver.query(
             CalendarContract.Instances.CONTENT_URI,
             arrayOf(CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE,
-                CalendarContract.Instances.BEGIN_TIME, CalendarContract.Instances.END_TIME,
+                CalendarContract.Instances.BEGIN, CalendarContract.Instances.END,
                 CalendarContract.Instances.EVENT_LOCATION),
-            CalendarContract.Instances.BEGIN_TIME + " >= ? AND " + CalendarContract.Instances.BEGIN_TIME + " < ?",
+            CalendarContract.Instances.BEGIN + " >= ? AND " + CalendarContract.Instances.BEGIN + " < ?",
             arrayOf(now.toString(), until.toString()),
-            CalendarContract.Instances.BEGIN_TIME + " ASC"
+            CalendarContract.Instances.BEGIN + " ASC"
         )?.use { c ->
             while (c.moveToNext() && out.length() < 50) {
                 val o = JSONObject()
