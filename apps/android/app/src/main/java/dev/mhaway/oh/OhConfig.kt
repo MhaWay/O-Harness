@@ -18,6 +18,8 @@ object OhConfig {
     fun deviceId(c: Context): String = prefs(c).getString("deviceId", "") ?: ""
     fun setDeviceId(c: Context, v: String) { prefs(c).edit().putString("deviceId", v).apply() }
 
+    fun onboarded(c: Context): Boolean = prefs(c).getBoolean("onboarded", false)
+    fun setOnboarded(c: Context, v: Boolean) { prefs(c).edit().putBoolean("onboarded", v).apply() }
     fun wsUrl(base: String): String {
         var u = base.trim().trimEnd('/')
         u = if (u.startsWith("https")) "wss" + u.substring(5) else "ws" + u.substring(4)

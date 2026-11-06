@@ -22,10 +22,30 @@ import java.util.concurrent.atomic.AtomicReference
 
 class OhTools(private val ctx: Context) {
 
-    fun capabilities(): JSONArray =
-        JSONArray().put("tools").put("tools:notify").put("tools:calendar")
+    // Metadata: every tool + the permissions it needs (none = always available).
+    // Permissions are all optional — tools are advertised to the gateway only when granted.
+    private fun permFor(tool: String): Array<String> = when (tool) {
+        "notify" -> if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
+        "calendar.list" -> arrayOf(Manifest.permission.READ_CALENDAR)
+        "calendar.create" -> arrayOf(Manifest.permission.WRITE_CALENDAR)
+        "location.get", "location.watch" -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        "record.audio" -> arrayOf(Manifest.permission.RECORD_AUDIO)
+        else -> emptyArray()
+    }
 
-    fun definitions(): JSONArray = JSONArray().apply {
+    fun available(tool: String): Boolean =
+        permFor(tool).all { ctx.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
+
+    fun capabilities(): JSONArray {
+        val a = JSONArray().put("tools")
+        if (available("notify")) a.put("tools:notify")
+        if (available("calendar.list") || available("calendar.create")) a.put("tools:calendar")
+        if (available("location.get")) a.put("tools:location")
+        if (available("record.audio")) a.put("tools:audio")
+        return a
+    }
+
+    private val allDefs: JSONArray = JSONArray().apply {
         put(JSONObject().put("name", "notify")
             .put("description", "Show a notification on this phone. Args: {title?: string, body?: string}")
             .put("parameters", JSONObject().put("type", "object")
@@ -60,27 +80,32 @@ class OhTools(private val ctx: Context) {
         put(JSONObject().put("name", "device.info")
             .put("description", "Phone model, android version, battery, battery saver, timezone. Args: {}")
             .put("parameters", JSONObject().put("type", "object")))
-        put(JSONObject().put("name", "screenshot")
-            .put("description", "Not available from the Android companion (needs media projection). Args: {}")
-            .put("parameters", JSONObject().put("type", "object")))
+    }
+
+    fun definitions(): JSONArray {
+        val out = JSONArray()
+        for (i in 0 until allDefs.length()) {
+            val d = allDefs.getJSONObject(i)
+            if (available(d.getString("name"))) out.put(d)
+        }
+        return out
     }
 
     private fun need(perm: String) {
         if (ctx.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED)
-            throw SecurityException("permission denied: $perm — grant it in the O-Harness companion app")
+            throw SecurityException("permission denied: $perm \u2014 grant it in the O-Harness companion app")
     }
 
     fun invoke(tool: String, args: JSONObject): Any = when (tool) {
         "notify" -> { NotifUtil.post(ctx, args.optString("title", "O-Harness"), args.optString("body", "")); JSONObject().put("ok", true) }
-        "calendar.list" -> calendarList(args.optInt("days", 7))
+        "calendar.list" -> { need(Manifest.permission.READ_CALENDAR); calendarList(args.optInt("days", 7)) }
         "calendar.create" -> calendarCreate(args)
         "location.get" -> locationGet()
         "location.watch" -> locationWatch(args.optInt("minutes", 30))
         "battery.get" -> batteryGet()
         "record.audio" -> recordAudio(args.optInt("seconds", 5))
         "device.info" -> deviceInfo()
-        "screenshot" -> throw UnsupportedOperationException("screenshot requires MediaProjection, not implemented")
-        else -> throw UnsupportedOperationException("unknown tool '$tool'")
+        else -> throw UnsupportedOperationException("unknown or unavailable tool '$tool'")
     }
 
     private val ISO = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).apply {
@@ -88,7 +113,6 @@ class OhTools(private val ctx: Context) {
     }
 
     private fun calendarList(days: Int): JSONArray {
-        need(Manifest.permission.READ_CALENDAR)
         val now = System.currentTimeMillis()
         val until = now + days.toLong() * 86_400_000L
         val out = JSONArray()

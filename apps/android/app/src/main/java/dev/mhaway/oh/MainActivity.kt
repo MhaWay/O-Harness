@@ -2,59 +2,119 @@ package dev.mhaway.oh
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
-import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
+// Post-pair permissions screen. Each row = one capability + the permission it needs,
+// all optional. Granting a permission makes its tool available; the hello that the
+// node sends re-advertises only granted tools. `available` reflects real grants.
 class MainActivity : android.app.Activity() {
     private var statusLine: TextView? = null
     private var urlLine: TextView? = null
+    private var root: LinearLayout? = null
+
+    // (tool key, permission, one-line rationale). battery/device.info need nothing.
+    private data class ToolRow(val title: String, val what: String, val permission: String, val label: String)
+    private val rows: List<ToolRow> by lazy {
+        val r = mutableListOf<ToolRow>()
+        if (Build.VERSION.SDK_INT >= 33) r.add(ToolRow("Notifications", "The assistant can send you notifications.",
+            Manifest.permission.POST_NOTIFICATIONS, "POST_NOTIFICATIONS"))
+        r.add(ToolRow("Calendar (read)", "Read your upcoming events.",
+            Manifest.permission.READ_CALENDAR, "READ_CALENDAR"))
+        r.add(ToolRow("Calendar (write)", "Create events on your calendar.",
+            Manifest.permission.WRITE_CALENDAR, "WRITE_CALENDAR"))
+        r.add(ToolRow("Location", "Know where you are, when you ask.",
+            Manifest.permission.ACCESS_FINE_LOCATION, "ACCESS_FINE_LOCATION"))
+        r.add(ToolRow("Microphone", "Record short audio clips on request.",
+            Manifest.permission.RECORD_AUDIO, "RECORD_AUDIO"))
+        return@lazy r
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         val pad = (16 * resources.displayMetrics.density).toInt()
-        val root = LinearLayout(this)
-        root.orientation = LinearLayout.VERTICAL
-        root.setPadding(pad, pad, pad, pad)
+        val lay = LinearLayout(this)
+        lay.orientation = LinearLayout.VERTICAL
+        lay.setPadding(pad, pad, pad, pad)
         val scroll = ScrollView(this)
-        scroll.addView(root)
+        scroll.addView(lay)
         setContentView(scroll)
-        fun tv(t: String, size: Float = 14f): TextView {
-            val v = TextView(this)
-            v.text = t
-            v.textSize = size
-            v.setTextColor(0xFFE6EDF3.toInt())
-            v.setPadding(0, 8, 0, 8)
-            root.addView(v)
-            return v
+        root = lay
+        urlLine = tv("gateway: (not set)")
+        statusLine = tv("service: idle")
+        val paired = OhConfig.url(this).isNotEmpty() && OhConfig.token(this).isNotEmpty()
+        if (paired && !OhConfig.onboarded(this)) {
+            permissionsScreen()
+        } else {
+            mainPanel()
         }
-        fun btn(label: String, onClick: () -> Unit): Button {
-            val v = Button(this)
-            v.text = label
-            v.setOnClickListener { onClick() }
-            root.addView(v)
-            return v
+    }
+
+    private fun tv(t: String, size: Float = 14f): TextView {
+        val v = TextView(this)
+        v.text = t
+        v.textSize = size
+        v.setTextColor(0xFFE6EDF3.toInt())
+        v.setPadding(0, 8, 0, 8)
+        root?.addView(v)
+        return v
+    }
+
+    private fun btn(label: String, onClick: () -> Unit): Button {
+        val v = Button(this)
+        v.text = label
+        v.setOnClickListener { onClick() }
+        root?.addView(v)
+        return v
+    }
+
+    private fun clearRoot() { root?.removeAllViews() }
+
+    private fun permissionsScreen() {
+        clearRoot()
+        tv("Almost ready", 22f)
+        tv("Pairing successful. Pick what the assistant may access on this phone \u2014 all optional. You can change any of these later.", 13f)
+        for (row in rows) {
+            val granted = checkSelfPermission(row.permission) == PackageManager.PERMISSION_GRANTED
+            tv(row.title + (if (granted) "  \u2713 active" else ""), 16f)
+            tv(row.what + "\npermission: " + row.label, 12f)
+            if (!granted) btn("Allow " + row.title) { askPermission(row.permission) }
         }
+        tv("Battery (level) and device info are always available and need no permission.", 12f)
+        btn("Avanti \u2192") { finishOnboard() }
+    }
+
+    private fun mainPanel() {
+        clearRoot()
         tv("O-Harness Companion", 22f)
         urlLine = tv("gateway: (not set)")
         statusLine = tv("service: idle")
         btn("Set gateway URL") { editUrl() }
         btn("Connect / reconnect") { saveAndStart() }
-        btn("Request permissions") { requestPerms() }
+        btn("Tool permissions") { permissionsScreen() }
         btn("Open gateway web UI") { openWeb() }
-        btn("Test notification") {
-            NotifUtil.post(this, "O-Harness", "Companion is alive")
-        }
+        btn("Test notification") { NotifUtil.post(this, "O-Harness", "Companion is alive") }
         btn("Start service on boot") { bootInfo() }
+        refresh()
+    }
+
+    private fun askPermission(perm: String) {
+        try { requestPermissions(arrayOf(perm), 71) } catch (e: Exception) { toast("permission request failed: " + e.message) }
+    }
+
+    private fun finishOnboard() {
+        OhConfig.setOnboarded(this, true)
+        saveAndStart()
+        handler().postDelayed({ mainPanel() }, 800)
     }
 
     override fun onResume() {
@@ -80,7 +140,7 @@ class MainActivity : android.app.Activity() {
                 OhConfig.setUrl(this, normalize(input.text.toString().trim()))
                 refresh()
             }
-            .setNegativeButton("Token…", null)
+            .setNegativeButton("Token\u2026", null)
             .create()
         dialog.setOnDismissListener { askToken() }
         dialog.show()
@@ -117,21 +177,11 @@ class MainActivity : android.app.Activity() {
         }
         val i = Intent(this, OhNodeService::class.java)
         try { startForegroundService(i) } catch (_: Exception) { startService(i) }
-        Toast.makeText(this, "Connecting…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Connecting\u2026", Toast.LENGTH_SHORT).show()
         handler().postDelayed({ refresh() }, 1500)
     }
 
     private fun handler() = android.os.Handler(mainLooper)
-
-    private fun requestPerms() {
-        val perms = mutableListOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-        try {
-            requestPermissions(perms.toTypedArray(), 42)
-        } catch (e: Exception) {
-            Toast.makeText(this, "permission request failed: " + e.message, Toast.LENGTH_LONG).show()
-        }
-    }
 
     private fun openWeb() {
         val url = OhConfig.url(this)
@@ -154,8 +204,11 @@ class MainActivity : android.app.Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
-        val denied = permissions.filterIndexed { i, _ -> results.getOrNull(i) != android.content.pm.PackageManager.PERMISSION_GRANTED }
-        if (denied.isEmpty()) toast("permissions granted") else toast("denied: " + denied.joinToString(", "))
-        saveAndStart()
+        if (OhConfig.url(this).isNotEmpty() && OhConfig.token(this).isNotEmpty() && !OhConfig.onboarded(this)) {
+            permissionsScreen()
+            return
+        }
+        val denied = permissions.filterIndexed { i, _ -> results.getOrNull(i) != PackageManager.PERMISSION_GRANTED }
+        if (denied.isEmpty()) toast("permission granted \u2014 reconnect to re-advertise tools") else toast("denied: " + denied.joinToString(", "))
     }
 }
