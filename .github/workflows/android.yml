@@ -19,8 +19,8 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: android-actions/setup-android@v3
-      - run: ./gradlew assembleDebug --no-daemon
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: oh-companion-debug
