@@ -9,17 +9,14 @@ object OhConfig {
     fun prefs(c: Context): SharedPreferences =
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    var Context.baseUrl: String
-        get() = prefs(this).getString("url", "") ?: ""
-        set(v) { prefs(this).edit().putString("url", v).apply() }
+    fun url(c: Context): String = prefs(c).getString("url", "") ?: ""
+    fun setUrl(c: Context, v: String) { prefs(c).edit().putString("url", v).apply() }
 
-    var Context.token: String
-        get() = prefs(this).getString("token", "") ?: ""
-        set(v) { prefs(this).edit().putString("token", v).apply() }
+    fun token(c: Context): String = prefs(c).getString("token", "") ?: ""
+    fun setToken(c: Context, v: String) { prefs(c).edit().putString("token", v).apply() }
 
-    var Context.deviceId: String
-        get() = prefs(this).getString("deviceId", "") ?: ""
-        set(v) { prefs(this).edit().putString("deviceId", v).apply() }
+    fun deviceId(c: Context): String = prefs(c).getString("deviceId", "") ?: ""
+    fun setDeviceId(c: Context, v: String) { prefs(c).edit().putString("deviceId", v).apply() }
 
     fun wsUrl(base: String): String {
         var u = base.trim().trimEnd('/')

@@ -66,7 +66,7 @@ class CompanionNode(private val ctx: Context) {
                         val m = JSONObject(text)
                         if (m.optString("type") == "welcome") {
                             val nid = m.optString("nodeId")
-                            if (nid.isNotEmpty()) OhConfig.deviceId = ctx.apply { deviceId = nid }
+                            if (nid.isNotEmpty()) OhConfig.setDeviceId(ctx, nid)
                             status = "connected"
                         } else if (m.optString("type") == "rpc:req") {
                             val id = m.optString("id")

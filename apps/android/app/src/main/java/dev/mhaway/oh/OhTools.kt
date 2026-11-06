@@ -93,13 +93,13 @@ class OhTools(private val ctx: Context) {
         val until = now + days.toLong() * 86_400_000L
         val out = JSONArray()
         ctx.contentResolver.query(
-            CalendarContract.INstances.CONTENT_URI,
-            arrayOf(CalendarContract.INstances.CALENDAR_ID, CalendarContract.INstances.TITLE,
-                CalendarContract.INstances.BEGIN_TIME, CalendarContract.INstances.END_TIME,
-                CalendarContract.INstances.EVENT_LOCATION),
-            CalendarContract.INstances.BEGIN_TIME + " >= ? AND " + CalendarContract.INstances.BEGIN_TIME + " < ?",
+            CalendarContract.Instances.CONTENT_URI,
+            arrayOf(CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE,
+                CalendarContract.Instances.BEGIN_TIME, CalendarContract.Instances.END_TIME,
+                CalendarContract.Instances.EVENT_LOCATION),
+            CalendarContract.Instances.BEGIN_TIME + " >= ? AND " + CalendarContract.Instances.BEGIN_TIME + " < ?",
             arrayOf(now.toString(), until.toString()),
-            CalendarContract.INstances.BEGIN_TIME + " ASC"
+            CalendarContract.Instances.BEGIN_TIME + " ASC"
         )?.use { c ->
             while (c.moveToNext() && out.length() < 50) {
                 val o = JSONObject()
@@ -139,7 +139,7 @@ class OhTools(private val ctx: Context) {
 
     private fun firstCalendarId(): Long {
         ctx.contentResolver.query(CalendarContract.Calendars.CONTENT_URI,
-            arrayOf(CalendarContract.Calendars._id),
+            arrayOf("_id"),
             CalendarContract.Calendars.VISIBLE + "=1", null, null)?.use { c ->
             if (c.moveToNext()) return c.getLong(0)
         }
@@ -168,7 +168,7 @@ class OhTools(private val ctx: Context) {
             } catch (_: Exception) {}
         }
         return JSONObject().put("ok", true).put("lat", best?.latitude ?: 0.0)
-            .put("lon", best?.longitude ?: 0.0).put("t", System.currentTimeMillis()).put("known", best != null))
+            .put("lon", best?.longitude ?: 0.0).put("t", System.currentTimeMillis()).put("known", best != null)
     }
 
     private fun locationWatch(minutes: Int): JSONObject {
@@ -187,7 +187,7 @@ class OhTools(private val ctx: Context) {
         watchStop = stopper
         Handler(Looper.getMainLooper()).postDelayed(stopper, minutes.coerceIn(1, 60) * 60_000L)
         return JSONObject().put("ok", true).put("minutes", minutes).put("provider", provider)
-            .put("note", "last location is stored; location.get returns it"))
+            .put("note", "last location is stored; location.get returns it")
     }
 
     private fun batteryGet(): JSONObject {

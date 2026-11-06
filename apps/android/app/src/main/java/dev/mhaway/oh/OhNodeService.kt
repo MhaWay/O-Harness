@@ -15,11 +15,11 @@ class OhNodeService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundWithNotif()
-        val url = OhConfig.baseUrl
-        val token = OhConfig.token
+        val url = OhConfig.url(this)
+        val token = OhConfig.token(this)
         if (url.isNotEmpty() && token.isNotEmpty()) {
             val n = node ?: CompanionNode(this).also { node = it }
-            n.start(url, token, OhConfig.deviceId)
+            n.start(url, token, OhConfig.deviceId(this))
         } else if (node != null) {
             node?.stop()
             node = null
@@ -38,7 +38,7 @@ class OhNodeService : Service() {
         // keep the session alive across swipe-away: the service restarts itself via START_STICKY
         val n = node
         if (n != null) { n.stop(); node = null }
-        if (OhConfig.baseUrl.isNotEmpty()) startService(Intent(this, OhNodeService::class.java))
+        if (OhConfig.url(this).isNotEmpty()) startService(Intent(this, OhNodeService::class.java))
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

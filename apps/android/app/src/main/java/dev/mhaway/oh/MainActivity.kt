@@ -63,21 +63,21 @@ class MainActivity : android.app.Activity() {
     }
 
     private fun refresh() {
-        val url = OhConfig.baseUrl
-        urlLine?.text = if (url.isEmpty()) "gateway: (not set)" else "gateway: $url (device " + OhConfig.deviceId + ")"
+        val url = OhConfig.url(this)
+        urlLine?.text = if (url.isEmpty()) "gateway: (not set)" else "gateway: $url (device " + OhConfig.deviceId(this) + ")"
         statusLine?.text = "service: " + CompanionNode.status
     }
 
     private fun editUrl() {
         val input = android.widget.EditText(this)
         input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        input.setText(OhConfig.baseUrl)
+        input.setText(OhConfig.url(this))
         input.hint = "http://192.168.50.97:18711 or wss://host"
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("Gateway URL")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
-                OhConfig.baseUrl = normalize(input.text.toString().trim())
+                OhConfig.setUrl(this, normalize(input.text.toString().trim()))
                 refresh()
             }
             .setNegativeButton("Token…", null)
@@ -89,14 +89,14 @@ class MainActivity : android.app.Activity() {
     private fun askToken() {
         val input = android.widget.EditText(this)
         input.inputType = InputType.TYPE_CLASS_TEXT
-        input.setText(OhConfig.token)
+        input.setText(OhConfig.token(this))
         input.hint = "gateway token or 6-digit pair code"
         android.app.AlertDialog.Builder(this)
             .setTitle("Access token")
             .setMessage("Token from Settings in the web UI (long token), or a 6-digit pairing code from 'o-h pair create'.")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
-                OhConfig.token = input.text.toString().trim()
+                OhConfig.setToken(this, input.text.toString().trim())
                 saveAndStart()
             }
             .setNegativeButton("Cancel", null)
@@ -111,7 +111,7 @@ class MainActivity : android.app.Activity() {
     }
 
     private fun saveAndStart() {
-        if (OhConfig.baseUrl.isEmpty() || OhConfig.token.isEmpty()) {
+        if (OhConfig.url(this).isEmpty() || OhConfig.token(this).isEmpty()) {
             Toast.makeText(this, "Set URL and token first", Toast.LENGTH_LONG).show()
             return
         }
@@ -134,7 +134,7 @@ class MainActivity : android.app.Activity() {
     }
 
     private fun openWeb() {
-        val url = OhConfig.baseUrl
+        val url = OhConfig.url(this)
         if (url.isEmpty()) { Toast.makeText(this, "Set the gateway URL first", Toast.LENGTH_LONG).show(); return }
         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (e: Exception) { toast(e.message ?: "no browser") }
     }
