@@ -25,8 +25,15 @@ class CompanionNode(private val ctx: Context) {
     private val tools = OhTools(ctx)
 
     fun start(url: String, token: String, deviceId: String) {
+        val already = running
         running = true
         status = "connecting"
+        if (already) {
+            // force a clean reconnect so the new tool list is re-advertised in hello
+            handler.removeCallbacksAndMessages(null)
+            try { ws?.close(1000, "re-pair") } catch (_: Exception) {}
+            ws = null
+        }
         connect(url, token, deviceId)
     }
 
