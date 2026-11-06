@@ -20,7 +20,13 @@ const HEARTBEAT_MS = 15_000;
 const STALE_MS = 90_000;
 
 function pidAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: the process exists but belongs to another user (CI runs unprivileged) — alive.
+    return (err as { code?: string }).code === "EPERM";
+  }
 }
 
 /** Instances dir for a data dir. */
