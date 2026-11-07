@@ -72,7 +72,7 @@ export async function main(args: string[]): Promise<void> {
       "schedule create|list|run|enable|disable|rm          time triggers (every N min / daily HH:mm / once)",
       "minions spawn|list|show|kill                        dispatch agent tasks (--depends-on a,b chains)",
       "memory add|search|list|consolidate                  durable temporal memory",
-      "pair create|list|revoke|redeem                      pairing codes + device secrets with scopes",
+      "pair create|qr|list|revoke|redeem                  pairing codes + device secrets with scopes (qr prints candidate URLs)",
       "tools list|call|pending|respond / grants            device-offered tools + approvals",
       "sessions list [--archived] / sessions search <text> / session show|create|append|export|archive|unarchive   session logs",
       "node connect [--url wss://..] [--insecure]          run a node that connects to a gateway",
@@ -571,6 +571,15 @@ export async function main(args: string[]): Promise<void> {
       const ttl = flag(args, "ttl");
       const c = await callOnce("pairing.create", { kind, scopes, ttlMinutes: ttl ? Number(ttl) : undefined }, port);
       console.log(JSON.stringify(c));
+      return;
+    }
+    if (sub === "qr") {
+      const kind = flag(args, "kind") ?? "mobile";
+      const scopes = (flag(args, "scopes") ?? "read,write").split(",").filter(Boolean);
+      const q = await callOnce("pairing.qr", { kind, scopes }, port) as { code: string; urls: { u: string; k: string }[] };
+      console.log("code: " + q.code + " (expires 10 min)");
+      for (const u of q.urls) console.log("  " + u.k.padEnd(10) + u.u);
+      console.log("scan with the companion app, or open a URL + /m?code=" + q.code);
       return;
     }
     if (sub === "list") {

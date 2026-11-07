@@ -953,12 +953,22 @@ function showView(name) {
                     return "<tr><td>" + esc(d.name || d.id) + "" + (d.alias !== undefined || (d.meta && d.meta.note) ? " <span class='dim'>" + esc((d.meta && d.meta.note) || "") + "</span>" : "") + "</td><td>" + esc(d.kind) + "</td><td>" + trust + notif + (d.connected ? "<span class='tag ok'>online</span>" : "<span class='tag err'>offline</span>") + "</td><td class='dim'>" + esc(tr) + "</td><td class='dim'>" + ls + "</td><td><button class='ghost' data-dmanage='" + esc(d.id) + "'>manage</button></td></tr>";
         }).join("") + "</table>" +
         "<h3 style='margin:18px 0 8px'>Pairing</h3>" +
-        '<div class="row"><input id="pairKind" placeholder="kind (mobile)" class="noflex" style="width:150px"><button class="ghost" id="pairCreate">Create pair code</button><span id="pairOut" class="dim"></span></div>' +
+        '<div class="row"><input id="pairKind" placeholder="kind (mobile)" class="noflex" style="width:150px"><button class="ghost" id="pairCreate">Create pair code</button><button class="ghost" id="pairQrBtn">QR code</button><span id="pairOut" class="dim"></span></div><div id="qrOut"></div>' +
         "<table><tr><th>name</th><th>kind</th><th>scopes</th><th>paired</th><th>last seen</th><th>state</th><th></th></tr>" +
         pairs.map(function (p) {
           return "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.kind) + "</td><td>" + (p.scopes || []).map(function (s) { return "<span class='tag'>" + esc(s) + "</span>" }).join("") + "</td><td class='dim'>" + fmtDT(p.pairedAt) + "</td><td class='dim'>" + (p.lastSeenAt ? fmtAgo(p.lastSeenAt) : "-") + "</td><td>" + (p.revokedAt ? "<span class='tag err'>revoked</span>" : "<span class='tag ok'>active</span>") + "</td><td>" + (p.revokedAt ? "" : "<button class='ghost danger' data-prev='" + esc(p.id) + "'>revoke</button>") + "</td></tr>";
         }).join("") + "</table>" +
         "<div class='row' style='margin-top:14px'><button class='ghost' id='selfPairBtn'>Pair this browser (secret)</button><span class='dim'>pairs this browser with read/write scope using its own secret — for phones use /m instead.</span></div>";
+      $("#pairQrBtn").onclick = async function () {
+        try {
+          var r = await rpc("pairing.qr", { kind: $("#pairKind").value || "mobile", scopes: ["read", "write"] });
+          $("#qrOut").innerHTML = '<div style="max-width:300px;margin:8px 0">' + r.qr + '</div><div class="dim">Code <strong>' + esc(r.code) + '</strong> · expires 10 min. Scan with the companion app, or use a URL:</div><div style="margin:6px 0">' + r.urls.map(function (x) { return '<button class="ghost" data-qrurl="' + esc(x.u) + '" style="margin:2px">' + esc(x.k) + ' · ' + esc(x.u) + '</button>' }).join("") + '</div>';
+          toast("qr code ready");
+          Array.prototype.forEach.call(document.querySelectorAll("[data-qrurl]"), function (b) {
+            b.onclick = function () { try { location.href = b.getAttribute("data-qrurl") + "/m?code=" + r.code } catch (e) { toast(String(e), "err") } };
+          });
+        } catch (e) { toast(String(e), "err") }
+      };
       $("#pairCreate").onclick = async function () {
         try { var c = await rpc("pairing.create", { kind: $("#pairKind").value || "mobile", scopes: ["read", "write"] }); $("#pairOut").innerHTML = "code: <strong>" + esc(c.code) + "</strong> (expires in 10 min)"; toast("code generated") } catch (e) { toast(String(e), "err") }
       };

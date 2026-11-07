@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "o-harness-gateway": "./src/bin.ts" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "o-harness-gateway": "./src/bin.ts"
+  },
   "dependencies": {
     "@o-harness/core": "workspace:*",
-    "@o-harness/protocol": "workspace:*",
     "@o-harness/plugin-local": "workspace:*",
+    "@o-harness/protocol": "workspace:*",
+    "qrcode-generator": "^2.0.4",
     "ws": "^8.18.0"
   }
 }

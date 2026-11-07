@@ -39,6 +39,7 @@ export const Methods = {
   PairingCreate: "pairing.create",
   PairingList: "pairing.list",
   PairingRevoke: "pairing.revoke",
+  PairingQr: "pairing.qr",
   MemorySearch: "memory.search",
   MemoryList: "memory.list",
   DeviceToolsOffer: "device.tools.offer",

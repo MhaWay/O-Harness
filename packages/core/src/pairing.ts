@@ -203,6 +203,7 @@ export const SCOPE_FOR_METHOD: Record<string, string> = {
   "pairing.redeem": "read",
   "pairing.list": "admin",
   "pairing.revoke": "admin",
+"pairing.qr": "admin",
   "devices.profile": "admin",
   "devices.forget": "admin",
 };

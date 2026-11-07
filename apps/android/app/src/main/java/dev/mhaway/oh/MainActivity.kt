@@ -59,6 +59,11 @@ class MainActivity : android.app.Activity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (QrPair.result(this, requestCode, resultCode, data)) return
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     private fun tv(t: String, size: Float = 14f): TextView {
         val v = TextView(this)
         v.text = t
@@ -79,6 +84,8 @@ class MainActivity : android.app.Activity() {
 
     private fun clearRoot() { root?.removeAllViews() }
 
+    fun permissionsScreenPublic() = permissionsScreen()
+
     private fun permissionsScreen() {
         clearRoot()
         tv("Almost ready", 22f)
@@ -98,6 +105,7 @@ class MainActivity : android.app.Activity() {
         tv("O-Harness Companion", 22f)
         urlLine = tv("gateway: (not set)")
         statusLine = tv("service: idle")
+        btn("Scan pairing QR") { QrPair.scan(this) }
         btn("Set gateway URL") { editUrl() }
         btn("Connect / reconnect") { saveAndStart() }
         btn("Tool permissions") { permissionsScreen() }

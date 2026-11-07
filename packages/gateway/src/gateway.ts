@@ -31,6 +31,8 @@ import { InstanceRegistry, listInstances, type InstanceInfo } from "./instances.
 import { ModelCache } from "./cache.ts";
 import { MemoryConsolidator } from "./consolidation.ts";
 import { resolveTls } from "./tls.ts";
+import { lanAddresses, tailscaleAddress } from "./node.ts";
+import qr from "qrcode-generator";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const execFileP = promisify(execFile);
@@ -135,6 +137,8 @@ export class Gateway {
   #warnedOthers = false;
   #chatAborts = new Map<string, AbortController>();
   #pairHits = new Map<string, { n: number; resetAt: number }>();
+  #tlsOn = false;
+  #overlayAddrs: string[] = [];
   #pending = new Map<string, Pending>();
   #wssNode = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
   #wssClient = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 });
@@ -549,6 +553,24 @@ export class Gateway {
       this.#broadcastEvent("pairing.created", { code: c.code, expiresAt: c.expiresAt });
       return c;
     });
+    this.rpc.set(Methods.PairingQr, (p) => {
+      const c = this.pairing.createCode({ kind: String(p?.kind ?? "mobile"), scopes: Array.isArray(p?.scopes) ? p.scopes.map(String) : undefined, ttlMinutes: Number(p?.ttlMinutes) || undefined });
+      const port = this.config.port;
+      const scheme = this.#tlsOn ? "https" : "http";
+      const base = (ip: string) => scheme + "://" + ip + ":" + port;
+      const urls: { u: string; k: string }[] = [];
+      const seen = new Set<string>();
+      const push = (u: string, k: string) => { if (!seen.has(u)) { seen.add(u); urls.push({ u, k }); } };
+      for (const ip of lanAddresses()) push(base(ip), "lan");
+      for (const ip of this.#overlayAddrs) push(base(ip), ip.startsWith("100.") ? "tailscale" : "overlay");
+      const ts = tailscaleAddress(); if (ts) push(base(ts), "tailscale");
+      for (const ex of (process.env.OH_QR_URLS ?? "").split(",").map((s) => s.trim()).filter(Boolean)) { const k = ex.indexOf("=") > 0 && ex.indexOf("://") < 0; push(k ? ex.slice(ex.indexOf("=") + 1) : ex, k ? ex.slice(0, ex.indexOf("=")) : "extra"); }
+      const text = JSON.stringify({ v: 1, c: c.code, u: urls });
+      const g = qr(0, "M"); g.addData(text); g.make();
+      this.#broadcastEvent("pairing.created", { code: c.code, expiresAt: c.expiresAt });
+      return { code: c.code, expiresAt: c.expiresAt, urls, qr: g.createSvgTag(4, 0) };
+    });
+
     this.rpc.set(Methods.PairingList, () => this.pairing.list().map((d) => ({ ...d, secret: undefined })));
     this.rpc.set(Methods.PairingRevoke, (p) => { this.pairing.revoke(String(p?.id ?? "")); this.audit.note("device.revoke", { id: String(p?.id ?? "") }); return { ok: true }; });
     // --- authentication methods (password / sessions / oauth) ---
@@ -707,6 +729,7 @@ export class Gateway {
     this.#startHousekeeping();
 
     const tlsMat = resolveTls(this.config.tls, this.#dataDir);
+    this.#tlsOn = !!(tlsMat && tlsMat.key);
     if (tlsMat && !tlsMat.key) this.bus.emit("log", { source: "tls", message: String(tlsMat.note ?? "tls material unavailable") });
     const handler = (req: IncomingMessage, res: ServerResponse) => {
       // Baseline security headers on every response. The UI, mobile and legacy pages all use
@@ -953,6 +976,7 @@ export class Gateway {
     if ((wantOv === "auto" && !isLoopbackHost(this.config.host)) || (wantOv !== "auto" && wantOv !== "off")) {
       const kind = wantOv === "auto" ? "tailscale" : wantOv as "tailscale" | "zerotier";
       const ov = await ensureOverlay(kind, { log: (m) => this.bus.emit("log", { source: "overlay", message: m }), authKey: this.config.overlayAuthKey, netId: this.config.overlayNetId });
+      this.#overlayAddrs = ov.addresses;
       if (ov.notes.length) this.bus.emit("log", { source: "overlay", message: ov.notes.join("; ") });
     }
     await new Promise<void>((res, rej) => {
