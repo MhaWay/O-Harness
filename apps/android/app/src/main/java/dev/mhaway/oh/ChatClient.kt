@@ -70,7 +70,7 @@ class ChatClient(private val baseUrl: String, private val token: String) {
                         val id = m.optString("id")
                         val cb = reqs.remove(id) ?: return
                         if (m.has("error")) handler.post { cb.second(m.optString("error")) }
-                        else handler.post { cb.first(m.opt("result")) }
+                        else handler.post { cb.first(if (m.has("result")) m.opt("result") else m.optJSONObject("result") ?: org.json.JSONObject()) }
                     } else if (m.optString("type") == "event") {
                         val topic = m.optString("topic")
                         val data = m.optJSONObject("data") ?: JSONObject()
@@ -104,7 +104,7 @@ class ChatClient(private val baseUrl: String, private val token: String) {
         backoff = (backoff * 2).coerceAtMost(15000L)
     }
 
-    fun rpc(method: String, params: JSONObject, ok: (JSONObject) -> Unit, err: (String) -> Unit) {
+    fun rpc(method: String, params: JSONObject, ok: (Any?) -> Unit, err: (String) -> Unit) {
         val id = "c" + seq.incrementAndGet() + "-" + System.currentTimeMillis()
         reqs[id] = Pair(ok, err)
         val msg = JSONObject().put("type", "rpc:req").put("id", id).put("method", method).put("params", params)
