@@ -2,6 +2,8 @@ package dev.mhaway.oh
 
 import android.Manifest
 import android.content.Intent
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -164,11 +166,34 @@ class MainActivity : android.app.Activity() {
             .setMessage("Token from Settings in the web UI (long token), or a 6-digit pairing code from 'o-h pair create'.")
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
-                OhConfig.setToken(this, input.text.toString().trim())
-                saveAndStart()
+                val v = input.text.toString().trim()
+                if (Regex("^[0-9]{6}$").matches(v)) redeemCode(v) else { OhConfig.setToken(this, v); saveAndStart() }
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun redeemCode(code: String) {
+        val base = OhConfig.url(this)
+        if (base.isEmpty()) { toast("Set gateway URL first"); return }
+        Thread {
+            try {
+                val body = "{\"code\":\"" + code + "\",\"name\":\"" + android.os.Build.MODEL + "\"}"
+                val req = okhttp3.Request.Builder().url(base + "/pair")
+                    .post(body.toRequestBody("application/json".toMediaType())).build()
+                okhttp3.OkHttpClient().newCall(req).execute().use { resp ->
+                    val txt = resp.body?.string() ?: ""
+                    if (resp.isSuccessful) {
+                        val o = org.json.JSONObject(txt)
+                        handler().post {
+                            OhConfig.setToken(this, o.getString("secret"))
+                            if (o.has("deviceId")) OhConfig.setDeviceId(this, o.getString("deviceId"))
+                            saveAndStart()
+                        }
+                    } else handler().post { toast("pair failed: " + resp.code) }
+                }
+            } catch (e: Exception) { handler().post { toast(e.message ?: "pair error") } }
+        }.start()
     }
 
     private fun normalize(v: String): String {

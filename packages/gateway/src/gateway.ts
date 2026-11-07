@@ -1050,7 +1050,9 @@ export class Gateway {
     const sessId = cookie || sessQ;
     if (sessId && this.auth.resolve(sessId)) return { admin: true, sessionKey: createHash("sha256").update(sessId).digest("hex") };
     const secret = url.searchParams.get("secret") || "";
-    const paired = this.pairing.auth(secret);
+    let paired = this.pairing.auth(secret);
+    // companion apps naturally put their value in ?token=; accept a device secret there too
+    if (!paired) paired = this.pairing.auth(token) ?? this.pairing.auth(bearer);
     if (paired) return { deviceId: paired.id };
     return null;
   }
