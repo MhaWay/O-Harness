@@ -17,25 +17,33 @@ import org.json.JSONObject
 // After scanning we ask which network connection to use, redeem the code over
 // POST /pair and store {url, secret, deviceId} exactly like a manual pair.
 object QrPair {
-    const val REQ = 4919;
-    private val client = OkHttpClient();
+    const val REQ = 4919
+    private val client = OkHttpClient()
 
-    fun scan(a: Activity) { IntentIntegrator(a).setBeepEnabled(false).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).initiateScan() }
+    fun scan(a: Activity) {
+        try {
+            IntentIntegrator(a).setBeepEnabled(false).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt("Scan the pairing QR on the gateway GUI").initiateScan()
+        } catch (e: Exception) {
+            toast(a, "scanner unavailable: " + (e.message ?: e.javaClass.simpleName))
+        }
+    }
 
     /** returns true when the intent carried a QR result (even if cancelled) */
     fun result(a: Activity, requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         val ir = IntentIntegrator.parseActivityResult(requestCode, resultCode, data) ?: return false
         val text = ir.contents
-        if (text == null) { toast(a, "scan cancelled"); return true }
+        if (text.isNullOrEmpty()) { toast(a, "scan cancelled"); return true }
         val json: JSONObject
         try { json = JSONObject(text) } catch (e: Exception) { toast(a, "not a pairing QR"); return true }
-        val code = json.optString("c");
-        val arr = json.optJSONArray("u");
+        val code = json.optString("c")
+        val arr = json.optJSONArray("u")
         if (code.length != 6 || arr == null || arr.length() == 0) { toast(a, "not a pairing QR"); return true }
-        val kinds = (0 until arr.length()).map { arr.getJSONObject(it).optString("k", "url") + " · " + arr.getJSONObject(it).optString("u") }
+        val kinds = (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            o.optString("k", "url") + " \u00b7 " + o.optString("u")
+        }
         android.app.AlertDialog.Builder(a).setTitle("Which network?").setItems(kinds.toTypedArray()) { _, i ->
-            val entry = arr.getJSONObject(i)
-            redeem(a, entry.optString("u"), code)
+            redeem(a, arr.getJSONObject(i).optString("u"), code)
         }.show()
         return true
     }
@@ -44,21 +52,21 @@ object QrPair {
         Thread {
             var msg = ""
             try {
-                val body = JSONObject().put("code", code).put("name", Build.MODEL).toString();
-NaN
-                    .post(body.toRequestBody("application/json".toMediaType())).build();
+                val body = JSONObject().put("code", code).put("name", Build.MODEL).toString()
+                val req = Request.Builder().url(base + "/pair")
+                    .post(body.toRequestBody("application/json".toMediaType())).build()
                 client.newCall(req).execute().use { resp ->
-                    val txt = resp.body?.string() ?: "";
+                    val txt = resp.body?.string() ?: ""
                     if (resp.isSuccessful) {
-                        val o = JSONObject(txt);
-NaN
+                        val o = JSONObject(txt)
+                        val url = base
                         Handler(Looper.getMainLooper()).post {
-                            OhConfig.setUrl(a, url);
-                            OhConfig.setToken(a, o.getString("secret"));
-                            if (o.has("deviceId")) OhConfig.setDeviceId(a, o.getString("deviceId"));
-                            OhConfig.setOnboarded(a, false);
-                            toast(a, "paired — choose permissions");
-                            (a as MainActivity).permissionsScreenPublic();
+                            OhConfig.setUrl(a, url)
+                            OhConfig.setToken(a, o.getString("secret"))
+                            if (o.has("deviceId")) OhConfig.setDeviceId(a, o.getString("deviceId"))
+                            OhConfig.setOnboarded(a, false)
+                            toast(a, "paired \u2014 choose permissions")
+                            (a as MainActivity).permissionsScreenPublic()
                         }
                     } else msg = "pair rejected (" + resp.code + ")"
                 }
