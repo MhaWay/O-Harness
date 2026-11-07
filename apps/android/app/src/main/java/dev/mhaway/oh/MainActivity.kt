@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
 
 // Post-pair permissions screen. Each row = one capability + the permission it needs,
 // all optional. Granting a permission makes its tool available; the hello that the
@@ -23,6 +24,7 @@ class MainActivity : android.app.Activity() {
     private var statusLine: TextView? = null
     private var urlLine: TextView? = null
     private var root: LinearLayout? = null
+    private var chat: ChatScreen? = null
 
     // (tool key, permission, one-line rationale). battery/device.info need nothing.
     private data class ToolRow(val title: String, val what: String, val permission: String, val label: String)
@@ -107,6 +109,7 @@ class MainActivity : android.app.Activity() {
         tv("O-Harness Companion", 22f)
         urlLine = tv("gateway: (not set)")
         statusLine = tv("service: idle")
+        btn("Open chat →") { showChat() }
         btn("Scan pairing QR") { QrPair.scan(this) }
         btn("Set gateway URL") { editUrl() }
         btn("Connect / reconnect") { saveAndStart() }
@@ -124,7 +127,7 @@ class MainActivity : android.app.Activity() {
     private fun finishOnboard() {
         OhConfig.setOnboarded(this, true)
         saveAndStart()
-        handler().postDelayed({ mainPanel() }, 800)
+        handler().postDelayed({ showChat() }, 800)
     }
 
     override fun onResume() {
@@ -231,6 +234,41 @@ class MainActivity : android.app.Activity() {
                 }
             }
             .setNegativeButton("Close", null).show()
+    }
+
+    fun showChat() {
+        chat?.close()
+        val c = ChatScreen(this)
+        chat = c
+        setContentView(c.build())
+    }
+
+    fun panelScreenPublic() { chat?.close(); chat = null; mainPanel() }
+    fun openWebPublic() = openWeb()
+
+    fun sessionsScreenPublic() {
+        val cc = ChatClient(OhConfig.url(this), OhConfig.token(this))
+        cc.start()
+        cc.rpc("sessions.list", org.json.JSONObject(), { res ->
+            val arr = res as? JSONArray ?: JSONArray()
+            val ids = mutableListOf<String>()
+            val names = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val s = arr.optJSONObject(i) ?: continue
+                ids.add(s.optString("id"))
+                names.add(s.optString("title") + (if (s.optBoolean("chat", true)) "" else " (minion)"))
+            }
+            if (names.isEmpty()) { cc.stop(); toast("no sessions"); return@rpc }
+            android.app.AlertDialog.Builder(this).setTitle("Sessions")
+                .setItems(names.toTypedArray()) { _, i ->
+                    val cur = chat
+                    if (cur != null) cur.useSession(ids[i])
+                    else { showChat(); chat?.useSession(ids[i]) }
+                    cc.stop()
+                }
+                .setOnCancelListener { cc.stop() }
+                .show()
+        }, { e -> cc.stop(); toast("sessions: " + e) })
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
